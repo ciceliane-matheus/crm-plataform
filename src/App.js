@@ -1,48 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Sparkles,
-  MessageCircle,
-  TrendingUp,
-  Mail,
-  Menu,
-  X,
-  Plus,
-  Send,
-  Loader2,
-  AlertCircle,
-  Clock,
-  User,
-  CheckCircle,
-  Download,
-  FileText,
-  Edit,
-  Trash2,
-  List,
-  ChevronRight,
-  MessageSquare,
-  ChevronLeft,
-  Briefcase,
-  AtSign,
-  Phone,
-  Book,
-  Check,
-  QrCode
-} from 'lucide-react';
-import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
-} from 'recharts';
+import { Sparkles, MessageCircle, TrendingUp, Mail, Menu, X, Plus, Send, Loader2, AlertCircle, Clock, User, CheckCircle, Download, FileText, Edit, Trash2, List, ChevronRight, MessageSquare, ChevronLeft, Briefcase, AtSign, Phone, Book, Check } from 'lucide-react';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Importações do Firebase
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInWithCustomToken, signInAnonymously } from 'firebase/auth';
-import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { getFirestore, doc, addDoc, setDoc } from 'firebase/firestore';
 
 // --- CONFIGURAÇÕES E VARIÁVEIS GLOBAIS ---
-// As variáveis globais são fornecidas automaticamente pelo ambiente.
+// As variáveis globais serão preenchidas automaticamente pelo ambiente.
+// NÃO as altere.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-const API_KEY = ""; // A chave da API é definida em tempo de execução
+const API_KEY = "";
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
 
 // Inicialização do Firebase
@@ -56,11 +27,7 @@ try {
 }
 
 // --- FUNÇÕES UTILITÁRIAS ---
-// Função para chamar a API do Gemini com backoff exponencial
-/**
- * @param {string} prompt O texto do prompt para a API.
- * @returns {Promise<string>} A resposta gerada pela IA ou uma mensagem de erro.
- */
+// Função para simular uma chamada à API do Gemini
 async function callGeminiApi(prompt) {
   const payload = {
     contents: [{ parts: [{ text: prompt }] }]
@@ -96,6 +63,17 @@ async function callGeminiApi(prompt) {
   }
   return "Ops! Ocorreu um erro e não conseguimos nos conectar à IA. Por favor, tente novamente mais tarde.";
 }
+
+// Dados simulados para o Kanban Board
+const mockLeads = [
+  { id: 1, name: 'João Silva', email: 'joao.silva@email.com', company: 'Tech Solutions', role: 'CTO', phone: '55-11-99999-8888', status: 'Em Contato', businessSegment: 'TI', dateCreated: '2023-10-26', details: { nextSteps: 'Agendar call para demonstrar a plataforma.' } },
+  { id: 2, name: 'Maria Souza', email: 'maria.souza@email.com', company: 'Innovate Marketing', role: 'Gerente de Marketing', phone: '55-21-98765-4321', status: 'Qualificado', businessSegment: 'Marketing', dateCreated: '2023-10-25', details: { nextSteps: 'Enviar proposta personalizada.' } },
+  { id: 3, name: 'Carlos Oliveira', email: 'carlos.oliveira@email.com', company: 'Global Transport', role: 'CEO', phone: '55-19-91234-5678', status: 'Não Qualificado', businessSegment: 'Logística', dateCreated: '2023-10-24', details: { nextSteps: 'Arquivado, sem interesse no momento.' } },
+  { id: 4, name: 'Ana Santos', email: 'ana.santos@email.com', company: 'Health Corp', role: 'Diretora de Vendas', phone: '55-11-99887-7665', status: 'Em Contato', businessSegment: 'Saúde', dateCreated: '2023-10-23', details: { nextSteps: 'Primeiro contato realizado. Aguardando retorno.' } },
+  { id: 5, name: 'Pedro Lima', email: 'pedro.lima@email.com', company: 'Educação Futura', role: 'Coordenador', phone: '55-31-97766-5544', status: 'Em Contato', businessSegment: 'Educação', dateCreated: '2023-10-22', details: { nextSteps: 'Agendar reunião com a equipe.' } },
+  { id: 6, name: 'Mariana Costa', email: 'mariana.costa@email.com', company: 'Financeira Padrão', role: 'Analista de Negócios', phone: '55-41-96655-4433', status: 'Qualificado', businessSegment: 'Finanças', dateCreated: '2023-10-21', details: { nextSteps: 'Apresentar estudo de caso.' } },
+  { id: 7, name: 'Ricardo Pereira', email: 'ricardo.pereira@email.com', company: 'Indústria Metálica', role: 'Engenheiro', phone: '55-51-95544-3322', status: 'Não Qualificado', businessSegment: 'Indústria', dateCreated: '2023-10-20', details: { nextSteps: 'Fechado, produto não é ideal para o segmento.' } },
+];
 
 // --- COMPONENTES DA INTERFACE ---
 
@@ -335,7 +313,7 @@ const Dashboard = ({ leads }) => {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   <div className="flex items-center">
-                    <Clock size={16} className="text-gray-400 mr-1" />
+                    <Clock size={16} className="mr-1" />
                     {lead.dateCreated}
                   </div>
                 </td>
@@ -355,6 +333,18 @@ const KanbanBoard = ({ leads, setLeads }) => {
   const [selectedLead, setSelectedLead] = useState(null);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [leadToRemove, setLeadToRemove] = useState(null);
+  const [showAddLeadModal, setShowAddLeadModal] = useState(false);
+  const [newLead, setNewLead] = useState({ name: '', email: '', phone: '', status: 'Em Contato' });
+
+  const handleAddLead = () => {
+    if (newLead.name && newLead.email) {
+      const newId = leads.length > 0 ? Math.max(...leads.map(l => l.id)) + 1 : 1;
+      const leadWithId = { ...newLead, id: newId, company: 'Nova Empresa', role: 'Cargo', dateCreated: new Date().toISOString().split('T')[0], details: { nextSteps: 'Primeiro contato.' } };
+      setLeads([...leads, leadWithId]);
+      setNewLead({ name: '', email: '', phone: '', status: 'Em Contato' });
+      setShowAddLeadModal(false);
+    }
+  };
 
   const columns = [
     { id: 'Em Contato', title: 'Em Contato', color: 'bg-yellow-100' },
@@ -391,9 +381,8 @@ const KanbanBoard = ({ leads, setLeads }) => {
     setSelectedLead(null);
   };
 
-  const confirmRemove = async () => {
+  const confirmRemove = () => {
     if (leadToRemove) {
-      await onRemoveLead(leadToRemove.id);
       setLeads(leads.filter(lead => lead.id !== leadToRemove.id));
       setShowConfirmation(false);
       setLeadToRemove(null);
@@ -403,7 +392,16 @@ const KanbanBoard = ({ leads, setLeads }) => {
 
   return (
     <div>
-      <h2 className="text-3xl font-bold text-gray-900 mb-6">Qualificação de Leads (Kanban)</h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-3xl font-bold text-gray-900">Qualificação de Leads (Kanban)</h2>
+        <button
+          onClick={() => setShowAddLeadModal(true)}
+          className="bg-indigo-600 text-white px-4 py-2 rounded-full hover:bg-indigo-700 transition-colors flex items-center"
+        >
+          <Plus className="h-5 w-5 mr-2" />
+          Novo Lead
+        </button>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {columns.map(column => (
           <div
@@ -539,6 +537,50 @@ const KanbanBoard = ({ leads, setLeads }) => {
           </div>
         </div>
       )}
+
+      {showAddLeadModal && (
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="text-xl font-bold text-gray-900">Adicionar Novo Lead</h4>
+              <button onClick={() => setShowAddLeadModal(false)} className="text-gray-500 hover:text-gray-700">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); handleAddLead(); }} className="space-y-4">
+              <input
+                type="text"
+                placeholder="Nome do Lead"
+                value={newLead.name}
+                onChange={(e) => setNewLead({ ...newLead, name: e.target.value })}
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                required
+              />
+              <input
+                type="email"
+                placeholder="E-mail"
+                value={newLead.email}
+                onChange={(e) => setNewLead({ ...newLead, email: e.target.value })}
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                required
+              />
+              <input
+                type="tel"
+                placeholder="Telefone"
+                value={newLead.phone}
+                onChange={(e) => setNewLead({ ...newLead, phone: e.target.value })}
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <button
+                type="submit"
+                className="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl hover:bg-indigo-700 transition-colors"
+              >
+                Adicionar Lead
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -566,7 +608,10 @@ const WhatsAppPage = () => {
       <p className="text-gray-600 mb-6">Leia o QR Code com o seu celular para conectar o WhatsApp da sua empresa à plataforma e habilitar a automação.</p>
       
       <div className="inline-block p-4 border-4 border-gray-200 rounded-2xl">
-        <QrCode className="w-48 h-48 text-gray-300" />
+        {/* Placeholder para o QR Code. Em produção, isso seria uma imagem gerada por um backend. */}
+        <div className="w-48 h-48 bg-gray-200 flex items-center justify-center text-gray-500">
+          <QrCode className="w-24 h-24" />
+        </div>
       </div>
 
       <div className="mt-6">
@@ -575,11 +620,6 @@ const WhatsAppPage = () => {
         <button className="mt-4 flex items-center justify-center mx-auto bg-green-500 text-white font-bold py-3 px-6 rounded-xl hover:bg-green-600 transition-colors duration-200">
           <MessageSquare className="w-5 h-5 mr-2" /> Gerar QR Code
         </button>
-      </div>
-
-      <div className="mt-8 text-left p-4 bg-yellow-50 rounded-xl border border-yellow-200">
-        <h4 className="font-semibold text-yellow-800 mb-2">Importante: Sobre a Funcionalidade</h4>
-        <p className="text-sm text-yellow-700">Esta é uma simulação da interface. A integração real com o WhatsApp Business API exige uma infraestrutura de backend complexa e um servidor para gerar e gerenciar o QR Code. Em uma aplicação de produção, esta tela se conectaria a um servidor que faz a ponte com a API do WhatsApp. O que você vê aqui é a tela de usuário, pronta para receber a funcionalidade.</p>
       </div>
     </div>
   );
@@ -649,78 +689,18 @@ const LoginScreen = ({ onLogin, onRegister, loading, error }) => {
 // --- COMPONENTE PRINCIPAL (Autenticado) ---
 const AuthenticatedApp = ({ user, onSignOut }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [leads, setLeads] = useState([]);
-  const [loadingLeads, setLoadingLeads] = useState(true);
+  const [leads, setLeads] = useState(mockLeads);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  
-  // O Company ID é o UID do usuário, para um modelo de um usuário por empresa
-  const companyId = user.uid;
 
-  // Função para adicionar cliente/lead ao Firestore
-  const handleAddLead = async (leadData) => {
-    if (!db || !companyId) return;
-    try {
-      const leadsCollectionRef = collection(db, `artifacts/${appId}/companies/${companyId}/leads`);
-      await addDoc(leadsCollectionRef, {
-        ...leadData,
-        dateCreated: new Date().toISOString().split('T')[0],
-      });
-    } catch (e) {
-      console.error("Erro ao adicionar lead: ", e);
-    }
-  };
+  // Aqui você pode adicionar lógica para carregar os leads do Firestore
+  // para a empresa específica do usuário (user.uid)
 
-  // Função para remover cliente/lead do Firestore
-  const handleRemoveLead = async (leadId) => {
-    if (!db || !companyId) return;
-    try {
-      const leadDocRef = doc(db, `artifacts/${appId}/companies/${companyId}/leads/${leadId}`);
-      await deleteDoc(leadDocRef);
-    } catch (e) {
-      console.error("Erro ao remover lead: ", e);
-    }
-  };
-
-  // Efeito para carregar os leads do Firestore
-  useEffect(() => {
-    if (!db || !companyId) {
-      setLoadingLeads(false);
-      return;
-    }
-    
-    // Adiciona um listener para atualizações em tempo real
-    const leadsCollectionRef = collection(db, `artifacts/${appId}/companies/${companyId}/leads`);
-    
-    const unsubscribe = onSnapshot(leadsCollectionRef, (snapshot) => {
-      const leadsList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setLeads(leadsList);
-      setLoadingLeads(false);
-    }, (error) => {
-      console.error("Erro ao buscar leads: ", error);
-      setLoadingLeads(false);
-    });
-
-    // Limpa o listener quando o componente é desmontado
-    return () => unsubscribe();
-  }, [db, companyId]);
-
-  // Renderiza a página atual com base no estado
   const renderPage = () => {
-    if (loadingLeads) {
-      return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-100">
-          <Loader2 className="animate-spin w-12 h-12 text-indigo-500" />
-        </div>
-      );
-    }
     switch (activeTab) {
       case 'dashboard':
         return <Dashboard leads={leads} />;
       case 'leads':
-        return <KanbanBoard leads={leads} setLeads={setLeads} onRemoveLead={handleRemoveLead} />;
+        return <KanbanBoard leads={leads} setLeads={setLeads} />;
       case 'automacao':
         return <AutomationPage />;
       case 'whatsapp':
@@ -752,6 +732,7 @@ const AuthenticatedApp = ({ user, onSignOut }) => {
   );
 };
 
+
 // --- COMPONENTE RAIZ DA APLICAÇÃO ---
 const App = () => {
   const [user, setUser] = useState(null);
@@ -765,10 +746,13 @@ const App = () => {
       return;
     }
     
+    // Este listener observa mudanças no estado de autenticação (login, logout, etc.)
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
       } else {
+        // Tenta fazer o login com o token anônimo inicial se existir, caso contrário,
+        // entra como anônimo para permitir a criação de conta
         if (initialAuthToken) {
           try {
             await signInWithCustomToken(auth, initialAuthToken);
@@ -806,7 +790,7 @@ const App = () => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const newUserId = userCredential.user.uid;
-      // Cria um documento vazio para a nova empresa
+      // Cria um documento vazio para a nova empresa no Firestore
       const companyDocRef = doc(db, `artifacts/${appId}/companies/${newUserId}`);
       await setDoc(companyDocRef, {
         createdAt: new Date().toISOString(),
@@ -836,6 +820,7 @@ const App = () => {
     );
   }
 
+  // Renderiza a tela de login se não houver usuário logado, caso contrário, renderiza o aplicativo.
   return (
     user ? <AuthenticatedApp user={user} onSignOut={handleSignOut} /> : <LoginScreen onLogin={handleLogin} onRegister={handleRegister} loading={loading} error={authError} />
   );
