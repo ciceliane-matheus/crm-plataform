@@ -11,6 +11,7 @@ const firebaseConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "crm-plataform.firebasestorage.app",
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "588876286066",
   appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:588876286066:web:ae5f253354de51662f9aeb",
+  measurementId: "G-SMMFBZDKFG"
 };
 
 const app = initializeApp(firebaseConfig);
