@@ -1,21 +1,18 @@
-// Import the functions you need from the SDKs you need
+// Replace the placeholders with your Firebase project values or keep using env variables.
+// If you already have your config object, you can paste it directly here.
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyDgQGScK1MJcU9KOFKzKVaJaVxapGQfnu4",
-  authDomain: "crm-plataform.firebaseapp.com",
-  projectId: "crm-plataform",
-  storageBucket: "crm-plataform.firebasestorage.app",
-  messagingSenderId: "588876286066",
-  appId: "1:588876286066:web:ae5f253354de51662f9aeb",
-  measurementId: "G-SMMFBZDKFG"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDgQGScK1MJcU9KOFKzKVaJaVxapGQfnu4",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "crm-plataform.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "crm-plataform",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "crm-plataform.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "588876286066",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:588876286066:web:ae5f253354de51662f9aeb",
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+export const auth = getAuth(app);
+export const db = getFirestore(app);
