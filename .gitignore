@@ -23,3 +23,8 @@ yarn-debug.log*
 yarn-error.log*
 .eslintcacheserviceAccountKey.json
 .env
+
+# WhatsApp Web JS session folder
+.wwebjs_auth/
+backend/.wwebjs_auth/
+frontend/.wwebjs_auth/
