@@ -1,22 +1,26 @@
-// 1. Carrega as variáveis de ambiente do arquivo .env para a memória
+// firebaseAdmin.js (versão com Storage)
+
 require('dotenv').config();
 const admin = require("firebase-admin");
 
-// Validação para garantir que a variável de ambiente foi carregada
-if (!process.env.FIREBASE_CREDENTIALS) {
-  throw new Error('A variável de ambiente FIREBASE_CREDENTIALS não foi definida. Verifique seu arquivo .env');
+if (!process.env.FIREBASE_CREDENTIALS || !process.env.FIREBASE_STORAGE_BUCKET) {
+  throw new Error('As variáveis FIREBASE_CREDENTIALS e FIREBASE_STORAGE_BUCKET devem ser definidas no .env');
 }
 
-// 2. Pega o conteúdo da variável de ambiente (que é um texto longo)
-// e o transforma de volta em um objeto JSON que o Firebase entende.
 const serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
 
-// 3. Inicializa o app do Firebase com as credenciais carregadas da memória
+// Inicializa o app do Firebase com as credenciais E o endereço do Storage
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET // <-- Adicionamos esta linha
 });
 
-// 4. Exporta a instância do banco de dados para ser usada em outras partes do projeto
-const db = admin.firestore();
+console.log('[Firebase Admin] SDK inicializado com sucesso.');
 
-module.exports = { db, admin };
+// Cria as instâncias dos serviços que vamos usar
+const db = admin.firestore();
+const auth = admin.auth();
+const storage = admin.storage(); // <-- Adicionamos esta linha
+
+// Exporta todos os serviços para serem usados no projeto
+module.exports = { db, auth, storage }; // <-- Adicionamos o storage aqui
