@@ -1004,7 +1004,7 @@ const AnalysisPage = () => {
   
     try {
       // A URL agora aponta para o seu próprio backend, que é mais seguro
-      const backendUrl = 'http://localhost:3001/api/analise/gemini';
+      const backendUrl = `${process.env.REACT_APP_BACKEND_URL}/api/analise/gemini`;
       
       console.log("Enviando texto para o backend em:", backendUrl);
 
