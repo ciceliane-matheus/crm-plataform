@@ -346,7 +346,7 @@ app.post('/api/analise/gemini', async (req, res) => {
     if (!apiKey) return res.status(500).json({ error: 'Chave de API do Gemini não configurada.' });
     if (!textToAnalyze) return res.status(400).json({ error: 'Nenhum texto para analisar foi fornecido.' });
 
-    const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent";
+    const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
     const prompt = `Analise o seguinte texto de uma conversa com um cliente e identifique: 1. O principal sentimento (positivo, negativo, neutro). 2. O principal problema ou necessidade do cliente. 3. Sugestões de melhoria para o atendimento. 4. Qual seria o próximo passo ideal para o time de vendas ou suporte. Responda em formato de JSON com as chaves "sentimento", "problema", "sugestoes" (array de strings) e "proximo_passo". O texto a ser analisado é: "${textToAnalyze}"`;
     const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } };
 
