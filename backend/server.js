@@ -506,9 +506,9 @@ app.post('/api/perform-daily-snapshot', async (req, res) => {
 // --- ROTAS PARA EVOLUTION API (QR CODE) ---
 // =================================================================================
 
-// URL e Chave da sua instância da Evolution API
-const EVOLUTION_API_URL = "https://evolutionmsantos.n8nready.com.br";
-const EVOLUTION_API_KEY = "ez8n040p46gd8v8p7ng3r5";
+// URL e Chave da sua instância da Evolution API (lidas do .env)
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 
 app.post('/api/evolution/send-message', isAuthorized, async (req, res) => {
   const { recipientId, message, companyId, leadId } = req.body; // Adicionado leadId para salvar a mensagem
