@@ -206,7 +206,7 @@ const WhatsappPage = ({ companyId, conversations: initialConversations, onArchiv
 
   return (
     <div className="flex h-full bg-white rounded-2xl shadow-lg overflow-hidden">
-      <div className="w-full md:w-[35%] lg:w-[30%] border-r border-gray-200 flex flex-col">
+      <div className="w-full md:w-[35%] lg:w-[30%] border-r border-gray-200 flex flex-col min-h-0">
         <header className="p-3 border-b border-gray-200 flex-shrink-0 flex justify-between items-center bg-gray-100">
           <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center font-bold text-gray-600">EU</div>
           <div className="relative">
@@ -236,7 +236,7 @@ const WhatsappPage = ({ companyId, conversations: initialConversations, onArchiv
             />
           </div>
         </div>
-        <div className="overflow-y-auto flex-grow">
+        <div className="overflow-y-auto" style={{ maxHeight: "calc(100vh - 150px)" }}>
           {conversations.map(conv => (
             <div key={conv.id} onClick={() => setSelectedConversation(conv)} className={`flex items-center p-3 cursor-pointer border-b border-gray-100 ${selectedConversation?.id === conv.id ? 'bg-gray-200' : 'hover:bg-gray-100'}`}>
               <div className="w-12 h-12 rounded-full bg-indigo-500 text-white flex-shrink-0 flex items-center justify-center font-bold text-xl mr-3">
