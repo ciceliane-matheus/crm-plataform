@@ -1,0 +1,23 @@
+# Node dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs e cobertura de testes
+coverage
+
+# Build output
+build
+
+# Sensíveis
+.env
+serviceAccountKey.json
+
+# WhatsApp session (não enviar para Docker)
+.wwebjs_auth
+backend/.wwebjs_auth
+frontend/.wwebjs_auth
+
+# MacOS
+.DS_Store
