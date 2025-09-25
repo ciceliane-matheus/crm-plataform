@@ -7,11 +7,11 @@ yarn-error.log*
 # Build output
 build
 
-# Sensíveis
+# Arquivos sensíveis
 .env
 serviceAccountKey.json
 
-# WhatsApp session
+# WhatsApp Web JS session
 .wwebjs_auth
 
 # MacOS
