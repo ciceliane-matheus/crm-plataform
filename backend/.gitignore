@@ -1,0 +1,8 @@
+# Dependências
+node_modules/
+
+# Arquivo de ambiente com chaves secretas
+.env
+
+# Pasta de sessão do WhatsApp Web JS
+.wwebjs_auth/
