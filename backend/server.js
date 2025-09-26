@@ -557,18 +557,21 @@ app.post('/api/evolution/send-message', isAuthorized, async (req, res) => {
   }
 });
 
-// server.js -> Substitua a função handleMediaUpload inteira por esta
-
 async function handleMediaUpload(messageDetails) {
   try {
     console.log('[MEDIA HELPER] Iniciando download da Evolution...');
     const url = `${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/CRM_V1`;
 
-    // Corpo da requisição CORRIGIDO conforme a documentação
+    // LÓGICA DE SEGURANÇA: Usa o ID principal da mensagem se o 'key' não existir.
+    const messageId = messageDetails.key?.id || messageDetails.id;
+    if (!messageId) {
+      throw new Error("Não foi possível encontrar um ID na mensagem de mídia.");
+    }
+
     const payload = {
       message: {
         key: {
-          id: messageDetails.key.id // Enviando apenas o ID da chave da mensagem
+          id: messageId
         }
       }
     };
@@ -607,7 +610,7 @@ async function handleMediaUpload(messageDetails) {
     };
 
   } catch (error) {
-    console.error('[MEDIA HELPER] Erro no processamento de mídia:', error.response ? error.response.data : error.message);
+    console.error('[MEDIA HELPER] Erro no processamento de mídia:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
     return null;
   }
 }
