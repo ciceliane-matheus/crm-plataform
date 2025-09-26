@@ -557,35 +557,30 @@ app.post('/api/evolution/send-message', isAuthorized, async (req, res) => {
   }
 });
 
-async function handleMediaUpload(eventData) {
+async function handleMediaUpload(messageDetails) {
   try {
     console.log('[MEDIA HELPER] Iniciando download da Evolution...');
+    
+    // URL CORRIGIDA de acordo com a documentação que você encontrou
+    const url = `${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/CRM_V1`;
 
-    const messageId = eventData.data.key.id;
-    if (!messageId) throw new Error("ID da mídia não encontrado no evento.");
-
-    const url = `${EVOLUTION_API_URL}/chat/downloadMedia/CRM_V1/${messageId}`;
-    const mediaResponse = await axios.get(url, {
-      headers: { apikey: EVOLUTION_API_KEY }
-    });
-
+    const mediaResponse = await axios.post(
+      url,
+      { message: messageDetails },
+      { headers: { 'apikey': EVOLUTION_API_KEY } }
+    );
+    
     const base64Data = mediaResponse.data.base64;
     if (!base64Data) throw new Error('Base64 não retornado pela Evolution API.');
 
     console.log('[MEDIA HELPER] Download concluído. Fazendo upload para o Firebase Storage...');
-
+    
     const buffer = Buffer.from(base64Data, 'base64');
-
-    const mimeType =
-      eventData.data.message.imageMessage?.mimetype ||
-      eventData.data.message.audioMessage?.mimetype ||
-      eventData.data.message.videoMessage?.mimetype ||
-      eventData.data.message.documentMessage?.mimetype ||
-      'application/octet-stream';
-
-    const fileExtension = mimeType.split('/')[1] || 'bin';
+    
+    const mimeType = messageDetails.imageMessage?.mimetype || messageDetails.audioMessage?.mimetype || messageDetails.videoMessage?.mimetype || messageDetails.documentMessage?.mimetype || 'application/octet-stream';
+    const fileExtension = mimeType.split('/')[1]?.split(';')[0] || 'bin'; // Limpa o mimetype
     const fileName = `media/${Date.now()}.${fileExtension}`;
-
+    
     const bucket = storage.bucket();
     const file = bucket.file(fileName);
 
@@ -594,15 +589,14 @@ async function handleMediaUpload(eventData) {
       public: true
     });
 
-    console.log("[MEDIA HELPER] URL da mídia:", mediaMessage?.url);
-
     const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     console.log(`[MEDIA HELPER] Upload concluído. URL Pública: ${publicUrl}`);
-
+    
     return {
-      mediaUrl: publicUrl,
-      mediaType: mimeType.split('/')[0]
+        mediaUrl: publicUrl,
+        mediaType: mimeType.split('/')[0]
     };
+
   } catch (error) {
     console.error('[MEDIA HELPER] Erro no processamento de mídia:', error.message);
     return null;
