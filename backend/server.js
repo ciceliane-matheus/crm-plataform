@@ -566,7 +566,13 @@ async function handleMediaUpload(messageDetails) {
 
     const mediaResponse = await axios.post(
       url,
-      { message: messageDetails },
+      {
+        mediaKeys: { // <-- Enviando apenas as chaves da mídia
+          mediaKey: messageDetails.mediaKey,
+          directPath: messageDetails.directPath,
+          url: messageDetails.url,
+        },
+      },
       { headers: { 'apikey': EVOLUTION_API_KEY } }
     );
     
