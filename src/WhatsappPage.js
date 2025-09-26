@@ -11,7 +11,7 @@ import { format } from 'date-fns';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const getInitials = (name) => {
-    if (!name) return '?';
+    if (!name || typeof name !== 'string' || name.trim() === '') return '#'; // Retorna '#' se o nome for inválido
     const names = name.split(' ');
     if (names.length > 1) {
       return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
@@ -286,7 +286,7 @@ const WhatsappPage = ({ companyId, conversations: initialConversations, onArchiv
               </div>
               <div className="flex-grow min-w-0">
                 <div className="flex justify-between items-center">
-                  <span className="font-semibold text-gray-800 truncate">{conv.name}</span>
+                  <span className="font-semibold text-gray-800 truncate">{conv.name || conv.phone}</span>
                   <span className="text-xs text-gray-500">{conv.timestamp ? format(conv.timestamp.toDate(), 'HH:mm') : ''}</span>
                 </div>
                 <p className="text-sm text-gray-500 truncate">{conv.lastMessage}</p>
@@ -304,7 +304,8 @@ const WhatsappPage = ({ companyId, conversations: initialConversations, onArchiv
                   {getInitials(selectedConversation.name)}
                 </div>
                 <div>
-                  <div className="font-semibold text-gray-800">{selectedConversation.name}</div>
+                  <div className="font-semibold text-gray-800">{selectedConversation.name || selectedConversation.phone}</div>
+                  <div className="text-xs text-gray-500">{selectedConversation.phone}</div>
                 </div>
               </div>
               <div className="relative">
