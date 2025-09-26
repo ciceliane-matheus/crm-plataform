@@ -557,22 +557,25 @@ app.post('/api/evolution/send-message', isAuthorized, async (req, res) => {
   }
 });
 
+// server.js -> Substitua a função handleMediaUpload inteira por esta
+
 async function handleMediaUpload(messageDetails) {
   try {
     console.log('[MEDIA HELPER] Iniciando download da Evolution...');
-    
-    // URL CORRIGIDA de acordo com a documentação que você encontrou
     const url = `${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/CRM_V1`;
+
+    // Corpo da requisição CORRIGIDO conforme a documentação
+    const payload = {
+      message: {
+        key: {
+          id: messageDetails.key.id // Enviando apenas o ID da chave da mensagem
+        }
+      }
+    };
 
     const mediaResponse = await axios.post(
       url,
-      {
-        mediaKeys: { // <-- Enviando apenas as chaves da mídia
-          mediaKey: messageDetails.mediaKey,
-          directPath: messageDetails.directPath,
-          url: messageDetails.url,
-        },
-      },
+      payload,
       { headers: { 'apikey': EVOLUTION_API_KEY } }
     );
     
@@ -584,7 +587,7 @@ async function handleMediaUpload(messageDetails) {
     const buffer = Buffer.from(base64Data, 'base64');
     
     const mimeType = messageDetails.imageMessage?.mimetype || messageDetails.audioMessage?.mimetype || messageDetails.videoMessage?.mimetype || messageDetails.documentMessage?.mimetype || 'application/octet-stream';
-    const fileExtension = mimeType.split('/')[1]?.split(';')[0] || 'bin'; // Limpa o mimetype
+    const fileExtension = mimeType.split('/')[1]?.split(';')[0] || 'bin';
     const fileName = `media/${Date.now()}.${fileExtension}`;
     
     const bucket = storage.bucket();
@@ -604,7 +607,7 @@ async function handleMediaUpload(messageDetails) {
     };
 
   } catch (error) {
-    console.error('[MEDIA HELPER] Erro no processamento de mídia:', error.message);
+    console.error('[MEDIA HELPER] Erro no processamento de mídia:', error.response ? error.response.data : error.message);
     return null;
   }
 }
