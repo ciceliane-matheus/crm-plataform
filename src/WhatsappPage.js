@@ -19,6 +19,48 @@ const getInitials = (name) => {
     return name.substring(0, 2).toUpperCase();
   };
 
+// NOVO COMPONENTE PARA RENDERIZAR CADA "BALÃO" DE MENSAGEM
+const MessageBubble = ({ message }) => {
+  // Função para renderizar o conteúdo da mensagem
+  const renderContent = () => {
+    if (message.mediaUrl) {
+      switch (message.mediaType) {
+        case 'image':
+          return <img src={message.mediaUrl} alt="Imagem enviada" className="rounded-lg max-w-xs" />;
+        case 'audio':
+          return <audio controls src={message.mediaUrl} className="w-64" />;
+        case 'video':
+          return <video controls src={message.mediaUrl} className="rounded-lg max-w-xs" />;
+        case 'document':
+          return (
+            <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer" className="flex items-center bg-gray-200 p-3 rounded-lg hover:bg-gray-300">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 flex-shrink-0"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+              <span>{message.text || 'Baixar documento'}</span>
+            </a>
+          );
+        default:
+          return <p className="text-sm text-gray-800">{message.text}</p>;
+      }
+    }
+    // Se não for mídia, apenas retorna o texto
+    return <p className="text-sm text-gray-800">{message.text}</p>;
+  };
+
+  const isFromMe = message.from === 'me';
+  const timestamp = message.timestamp ? format(message.timestamp.toDate(), 'HH:mm') : '';
+
+  return (
+    <div className={`flex my-1 ${isFromMe ? 'justify-end' : 'justify-start'}`}>
+      <div className={`py-2 px-3 rounded-xl max-w-md shadow-sm ${isFromMe ? 'bg-emerald-200' : 'bg-white'}`}>
+        {renderContent()}
+        <p className={`text-xs mt-1 text-right ${isFromMe ? 'text-green-800 opacity-60' : 'text-gray-400'}`}>
+          {timestamp}
+        </p>
+      </div>
+    </div>
+  );
+};
+
 
 const WhatsappPage = ({ companyId, conversations: initialConversations, onArchiveLead }) => {
   // ... (todos os outros estados permanecem os mesmos) ...
@@ -280,48 +322,7 @@ const WhatsappPage = ({ companyId, conversations: initialConversations, onArchiv
             </header>
             <main className="flex-grow h-0 overflow-y-auto p-6">
               {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex my-1 ${msg.from === 'me' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`py-2 px-3 rounded-xl max-w-lg shadow-sm ${
-                      msg.from === 'me' ? 'bg-emerald-200' : 'bg-white'
-                    }`}
-                  >
-                    {/* Se for mídia, renderiza diferente */}
-                    {msg.mediaType === "image" && msg.mediaUrl ? (
-                      <img
-                        src={msg.mediaUrl}
-                        alt="imagem"
-                        className="max-w-xs rounded-lg mb-1"
-                      />
-                    ) : msg.mediaType === "audio" && msg.mediaUrl ? (
-                      <audio controls className="mb-1">
-                        <source src={msg.mediaUrl} type="audio/mpeg" />
-                        Seu navegador não suporta áudio.
-                      </audio>
-                    ) : msg.mediaType === "video" && msg.mediaUrl ? (
-                      <video controls className="max-w-xs rounded-lg mb-1">
-                        <source src={msg.mediaUrl} type="video/mp4" />
-                        Seu navegador não suporta vídeo.
-                      </video>
-                    ) : (
-                      <p className="text-sm text-gray-800">{msg.text}</p>
-                    )}
-
-                    {/* Timestamp */}
-                    <p
-                      className={`text-xs mt-1 text-right ${
-                        msg.from === "me"
-                          ? "text-green-800 opacity-60"
-                          : "text-gray-400"
-                      }`}
-                    >
-                      {msg.timestamp ? format(msg.timestamp.toDate(), "HH:mm") : ""}
-                    </p>
-                  </div>
-                </div>
+                <MessageBubble key={msg.id} message={msg} />
               ))}
               <div ref={chatEndRef} />
             </main>
