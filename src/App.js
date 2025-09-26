@@ -69,10 +69,6 @@ async function safeJsonParse(jsonString) {
   }
 }
 
-// 🔑 variáveis de ambiente (ficam logo no topo)
-const API_URL = process.env.REACT_APP_API_URL;
-const API_KEY = process.env.REACT_APP_API_KEY;
-
 /**
  * Função principal para chamar a API do Gemini com retentativas e backoff exponencial.
  * Esta função lida com limites de taxa e erros de rede.
@@ -81,65 +77,31 @@ const API_KEY = process.env.REACT_APP_API_KEY;
  * @returns {Promise<string>} O texto da resposta da IA ou uma mensagem de erro.
  */
 
-async function callGeminiAPI(history, generationConfig = {}) {
-  // Adicionados para depuração
-  console.log("Tentando chamar a API com a URL:", API_URL);
-  console.log("A chave da API está definida?", API_KEY ? "Sim" : "NÃO! Verifique o .env");
-
-  // Se as variáveis estiverem indefinidas, pare a execução para evitar o erro.
-  if (!API_URL || !API_KEY) {
-    console.error("ERRO: API_URL ou API_KEY não estão definidas! Verifique seu arquivo .env e reinicie o servidor.");
-    return "Erro de configuração: A URL ou a chave da API não foram encontradas. Verifique o console para mais detalhes.";
-  }
-
-  const payload = {
-    contents: history,
-    generationConfig,
-  };
-  const requestOptions = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  };
-
-  let attempts = 0;
-  const maxAttempts = 5;
-  const baseDelay = 1000;
-
-  while (attempts < maxAttempts) {
-    try {
-      const response = await fetch(`${API_URL}?key=${API_KEY}`, requestOptions);
-      if (response.status === 429) {
-        const delay = baseDelay * Math.pow(2, attempts);
-        console.warn(`Taxa de limite excedida. Tentando novamente em ${delay / 1000}s...`);
-        await new Promise(res => setTimeout(res, delay));
-        attempts++;
-        continue;
+async function callGeminiAPI(history) {
+  try {
+    const response = await fetch(
+      `${process.env.REACT_APP_BACKEND_URL}/api/analise/gemini`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          textToAnalyze: history.map(h => h.parts?.[0]?.text).join(" ")
+        }),
       }
-      const result = await response.json();
-      if (result.candidates && result.candidates.length > 0) {
-        const text = result.candidates[0].content?.parts?.[0]?.text;
-        if (text) {
-          return text;
-        } else {
-          console.error("Resposta da API vazia ou inválida:", result);
-          return "Ops! Ocorreu um erro ao gerar a resposta. Por favor, tente novamente.";
-        }
-      } else {
-        console.error("Resposta da API sem candidatos:", result);
-        return "Ops! Não consegui gerar uma resposta. Tente reformular a pergunta.";
-      }
-    } catch (error) {
-      console.error("Erro na chamada da API:", error);
-      const delay = baseDelay * Math.pow(2, attempts);
-      console.warn(`Erro na chamada da API. Tentando novamente em ${delay / 1000}s...`);
-      await new Promise(res => setTimeout(res, delay));
-      attempts++;
+    );
+
+    if (!response.ok) {
+      throw new Error(`Erro no backend: ${response.status}`);
     }
-  }
 
-  return "Ops! Ocorreu um erro e não conseguimos nos conectar à IA. Por favor, tente novamente mais tarde.";
+    const result = await response.json();
+    return JSON.stringify(result, null, 2);
+  } catch (error) {
+    console.error("Erro ao chamar o backend:", error);
+    return "Erro na análise. Tente novamente mais tarde.";
+  }
 }
+
 
 /**
  * Componente principal da aplicação.
