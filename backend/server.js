@@ -557,15 +557,15 @@ app.post('/api/evolution/send-message', isAuthorized, async (req, res) => {
   }
 });
 
-async function handleMediaUpload(messageDetails) {
+async function handleMediaUpload(messageData) { // Agora recebe 'messageData'
   try {
     console.log('[MEDIA HELPER] Iniciando download da Evolution...');
     const url = `${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/CRM_V1`;
 
-    // LÓGICA DE SEGURANÇA: Usa o ID principal da mensagem se o 'key' não existir.
-    const messageId = messageDetails.key?.id || messageDetails.id;
+    // LÓGICA CORRIGIDA: Pega o ID diretamente de messageData.key.id
+    const messageId = messageData.key?.id;
     if (!messageId) {
-      throw new Error("Não foi possível encontrar um ID na mensagem de mídia.");
+      throw new Error("Não foi possível encontrar um ID na chave da mensagem de mídia.");
     }
 
     const payload = {
@@ -589,6 +589,8 @@ async function handleMediaUpload(messageDetails) {
     
     const buffer = Buffer.from(base64Data, 'base64');
     
+    // Pega os detalhes da mídia de dentro de messageData.message
+    const messageDetails = messageData.message;
     const mimeType = messageDetails.imageMessage?.mimetype || messageDetails.audioMessage?.mimetype || messageDetails.videoMessage?.mimetype || messageDetails.documentMessage?.mimetype || 'application/octet-stream';
     const fileExtension = mimeType.split('/')[1]?.split(';')[0] || 'bin';
     const fileName = `media/${Date.now()}.${fileExtension}`;
@@ -669,7 +671,7 @@ app.post('/api/evolution/webhook', async (req, res) => {
       }
       else if (messageDetails?.imageMessage || messageDetails?.audioMessage || messageDetails?.videoMessage || messageDetails?.documentMessage) {
         // CHAMADA CORRIGIDA: Passando o objeto correto para a função
-        const mediaInfo = await handleMediaUpload(messageDetails);
+        const mediaInfo = await handleMediaUpload(messageData);
         
         if (mediaInfo) {
           messageToSave.mediaUrl = mediaInfo.mediaUrl;
