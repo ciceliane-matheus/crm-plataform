@@ -127,6 +127,8 @@ export default function App() {
   const [kanbanColumns, setKanbanColumns] = useState([]);
   const [tags, setTags] = useState([]);
   const [segments, setSegments] = useState([]);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
     if (!companyId) return;
@@ -160,6 +162,7 @@ export default function App() {
         // Nova lógica: Busca o "atalho" do usuário diretamente
         const userDocRef = doc(db, "users", currentUser.uid);
         const userDocSnap = await getDoc(userDocRef);
+        setAuthLoading(false);
 
         if (userDocSnap.exists() && userDocSnap.data().companyId) {
           const foundCompanyId = userDocSnap.data().companyId;
@@ -190,6 +193,7 @@ export default function App() {
         setCompanyId(null);
         setLeads([]);
         setLoadingCompany(false);
+        setAuthLoading(false);
       }
     });
 
@@ -211,12 +215,8 @@ export default function App() {
     return () => unsubscribe();
   }, [companyId]); // A dependência é apenas o companyId
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (e) {
-      console.error("Erro ao fazer logout: ", e);
-    }
+  const handleLogout = () => {
+    setIsLogoutModalOpen(true); // Apenas abre o modal
   };
 
   const pages = [
@@ -277,7 +277,7 @@ export default function App() {
         </button>
       </div>
       <nav>
-        {pages.map(page => (
+        {pages.filter(p => p.id !== 'whatsapp').map(page => (
           <button
             key={page.id}
             onClick={() => {
@@ -461,13 +461,53 @@ export default function App() {
     }
   };
   
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <Loader2 className="h-10 w-10 animate-spin text-indigo-500" />
+      </div>
+    );
+  }
+
   if (!user) {
     return <Auth />;
   }
 
+  const LogoutConfirmationModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm text-center">
+        <h2 className="text-xl font-bold text-gray-800 mb-4">Confirmar Saída</h2>
+        <p className="text-gray-600 mb-6">Você tem certeza que deseja sair da plataforma?</p>
+        <div className="flex justify-center gap-4">
+          <button
+            onClick={() => setIsLogoutModalOpen(false)}
+            className="bg-gray-200 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-300 font-semibold"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                await signOut(auth);
+                setIsLogoutModalOpen(false); // Fecha o modal após o sucesso
+              } catch (e) {
+                console.error("Erro ao fazer logout: ", e);
+                toast.error("Não foi possível sair. Tente novamente.");
+              }
+            }}
+            className="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600 font-semibold"
+          >
+            Sair
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex bg-gray-100 min-h-screen font-sans">
       <Toaster position="top-right" />
+      {isLogoutModalOpen && <LogoutConfirmationModal />}
       <Sidebar />
       <MobileMenu />
 
@@ -480,10 +520,6 @@ export default function App() {
           <h1 className="text-xl font-bold text-gray-900">
             Fluxo<span className="text-indigo-500">Connect</span>
           </h1>
-          {/* Adicionado o botão de logout aqui também para consistência */}
-          <button onClick={handleLogout} className="text-gray-600 hover:text-gray-800">
-            <LogOut className="h-6 w-6" />
-          </button>
         </header>
 
         {/* A tag <main> é crucial. 'flex-1' faz ela esticar e 'overflow-hidden' contém seus filhos. */}

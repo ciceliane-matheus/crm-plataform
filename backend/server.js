@@ -640,13 +640,20 @@ app.post('/api/evolution/webhook', async (req, res) => {
   }
 
   // --- Mensagens ---
+
+  // server.js -> Substitua o bloco if (eventData.event === 'messages.upsert') por este
+
   if (eventData.event === 'messages.upsert') {
     try {
-      const isFromMe = eventData.data.key.fromMe;
-      const contactNumber = eventData.data.key.remoteJid.split('@')[0];
-      const messageDetails = eventData.data.message;
-      const contactName = eventData.data.name || eventData.data.pushName || fromNumber;
-      const timestamp = new Date(eventData.data.messageTimestamp * 1000);
+      const messageData = eventData.data; // Usar um atalho para clareza
+      const isFromMe = messageData.key.fromMe;
+      const contactNumber = messageData.key.remoteJid.split('@')[0];
+      const messageDetails = messageData.message;
+      
+      // LÓGICA DE CAPTURA DE NOME CORRIGIDA
+      const contactName = messageData.name || messageData.pushName || fromNumber;
+      
+      const timestamp = new Date(messageData.messageTimestamp * 1000);
       const companyId = '3bHx7UfBFve1907kwqqT';
       const leadsRef = db.collection('companies').doc(companyId).collection('leads');
       const leadQuery = await leadsRef.where('phone', '==', contactNumber).get();
@@ -657,36 +664,28 @@ app.post('/api/evolution/webhook', async (req, res) => {
         timestamp: timestamp
       };
 
-      // --- Tratamento de texto ---
       if (messageDetails?.conversation || messageDetails?.extendedTextMessage) {
         messageToSave.text = messageDetails.conversation || messageDetails.extendedTextMessage.text;
       }
-      // --- Tratamento de mídia ---
-      else if (
-        messageDetails?.imageMessage ||
-        messageDetails?.audioMessage ||
-        messageDetails?.videoMessage ||
-        messageDetails?.documentMessage
-      ) {
-        const mediaInfo = await handleMediaUpload(eventData);
+      else if (messageDetails?.imageMessage || messageDetails?.audioMessage || messageDetails?.videoMessage || messageDetails?.documentMessage) {
+        // CHAMADA CORRIGIDA: Passando o objeto correto para a função
+        const mediaInfo = await handleMediaUpload(messageDetails);
+        
         if (mediaInfo) {
           messageToSave.mediaUrl = mediaInfo.mediaUrl;
           messageToSave.mediaType = mediaInfo.mediaType;
-          messageToSave.text =
-            `[${mediaInfo.mediaType.charAt(0).toUpperCase() + mediaInfo.mediaType.slice(1)}]`;
+          messageToSave.text = `[${mediaInfo.mediaType.charAt(0).toUpperCase() + mediaInfo.mediaType.slice(1)}]`;
         } else {
           messageToSave.text = '[Erro ao processar mídia]';
         }
       }
-      // --- Caso não reconheça ---
       else {
         messageToSave.text = '[Mensagem não suportada]';
       }
 
-      // --- Lógica para encontrar/criar o lead ---
       if (leadQuery.empty && !isFromMe) {
         const newLead = await leadsRef.add({
-          name: contactName,
+          name: contactName, // Usando o nome capturado corretamente
           phone: contactNumber,
           status: 'Em Contato',
           lastMessage: messageToSave.text,
@@ -701,6 +700,11 @@ app.post('/api/evolution/webhook', async (req, res) => {
       } else if (!leadQuery.empty) {
         leadDocRef = leadQuery.docs[0].ref;
         leadId = leadQuery.docs[0].id;
+        // Atualiza o nome do lead se ele estiver vazio ou for apenas um número
+        const currentLeadData = leadQuery.docs[0].data();
+        if (contactName !== contactNumber && (!currentLeadData.name || currentLeadData.name === contactNumber)) {
+            await leadDocRef.update({ name: contactName });
+        }
         await leadDocRef.update({
           lastMessage: messageToSave.text,
           timestamp: timestamp
@@ -709,12 +713,10 @@ app.post('/api/evolution/webhook', async (req, res) => {
         return;
       }
 
-      // --- Salva mensagem no Firestore ---
       const messagesRef = leadDocRef.collection('messages');
       await messagesRef.add(messageToSave);
       console.log(`[EVOLUTION WEBHOOK] Mensagem de '${messageToSave.from}' salva para o lead ${leadId}`);
 
-      // --- Encaminha para o n8n se for mensagem de contato ---
       if (!isFromMe) {
         const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
         if (n8nWebhookUrl) {
