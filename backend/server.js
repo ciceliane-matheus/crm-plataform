@@ -598,12 +598,98 @@ async function handleMediaUpload(messageData) {
 app.post('/api/evolution/webhook', async (req, res) => {
   const eventData = req.body;
   res.status(200).send('Webhook recebido.');
+  
+  // Imprime apenas o nome do evento para um log mais limpo
+  console.log(`[EVOLUTION WEBHOOK] Evento recebido: ${eventData.event}`);
 
-  // Imprime o corpo completo do webhook para análise
-  console.log(
-    "DADOS COMPLETOS DO WEBHOOK:",
-    JSON.stringify(eventData, null, 2)
-  );
+  if (eventData.event === 'connection.update') {
+    const state = eventData.data.state;
+    const companyId = '3bHx7UfBFve1907kwqqT';
+    const companyRef = db.collection('companies').doc(companyId);
+    try {
+      if (state === 'CONNECTED' || state === 'open') {
+        await companyRef.update({ whatsappConnected: true });
+        console.log(`[EVOLUTION WEBHOOK] Firestore atualizado: Conectado.`);
+      } else if (state === 'close') {
+        await companyRef.update({ whatsappConnected: false });
+        console.log(`[EVOLUTION WEBHOOK] Firestore atualizado: Desconectado.`);
+      }
+    } catch(error) {
+      console.error("[EVOLUTION WEBHOOK] Erro ao atualizar status:", error);
+    }
+    return;
+  }
+
+  if (eventData.event === 'messages.upsert') {
+    try {
+      const messageData = eventData.data;
+      const isFromMe = messageData.key.fromMe;
+      const contactNumber = messageData.key.remoteJid.split('@')[0];
+      const messageDetails = messageData.message;
+      
+      // LÓGICA FINAL DE CAPTURA DE NOME: Usa o pushName como fonte principal.
+      const contactName = messageData.pushName || fromNumber;
+      
+      const timestamp = new Date(messageData.messageTimestamp * 1000);
+      const companyId = '3bHx7UfBFve1907kwqqT';
+      const leadsRef = db.collection('companies').doc(companyId).collection('leads');
+      const leadQuery = await leadsRef.where('phone', '==', contactNumber).get();
+
+      let leadDocRef, leadId;
+      let messageToSave = {
+        from: isFromMe ? 'me' : 'contact',
+        timestamp: timestamp
+      };
+
+      if (messageDetails?.imageMessage || messageDetails?.audioMessage || messageDetails?.videoMessage || messageDetails?.documentMessage || messageDetails?.stickerMessage) {
+        const mediaInfo = await handleMediaUpload(messageData);
+        if (mediaInfo) {
+          messageToSave.mediaUrl = mediaInfo.mediaUrl;
+          messageToSave.mediaType = mediaInfo.mediaType;
+          messageToSave.text = `[${mediaInfo.mediaType.charAt(0).toUpperCase() + mediaInfo.mediaType.slice(1)}]`;
+        } else {
+          messageToSave.text = '[Erro ao processar mídia]';
+        }
+      } else if (messageDetails?.conversation || messageDetails?.extendedTextMessage) {
+        messageToSave.text = messageDetails.conversation || messageDetails.extendedTextMessage.text;
+      } else {
+        messageToSave.text = '[Mensagem não suportada]';
+      }
+
+      if (leadQuery.empty && !isFromMe) {
+        const newLead = await leadsRef.add({
+          name: contactName,
+          phone: contactNumber,
+          status: 'Em Contato',
+          lastMessage: messageToSave.text,
+          timestamp: timestamp,
+          dateCreated: new Date().toISOString(),
+          source: 'whatsapp',
+          tags: [],
+          details: {}
+        });
+        leadDocRef = newLead;
+        leadId = newLead.id;
+      } else if (!leadQuery.empty) {
+        leadDocRef = leadQuery.docs[0].ref;
+        leadId = leadQuery.docs[0].id;
+        await leadDocRef.update({
+          name: contactName, // Garante que o nome esteja sempre atualizado com o pushName
+          lastMessage: messageToSave.text,
+          timestamp: timestamp
+        });
+      } else {
+        return;
+      }
+
+      const messagesRef = leadDocRef.collection('messages');
+      await messagesRef.add(messageToSave);
+      console.log(`[EVOLUTION WEBHOOK] Mensagem de '${messageToSave.from}' salva para o lead ${leadId}`);
+
+    } catch (error) {
+      console.error('[EVOLUTION WEBHOOK] Erro ao processar mensagem (upsert):', error);
+    }
+  }
 });
 
 app.get('/api/evolution/instance/qr/:instanceName', isAuthorized, async (req, res) => {
