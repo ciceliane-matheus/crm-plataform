@@ -19,6 +19,20 @@ const getInitials = (name) => {
     return name.substring(0, 2).toUpperCase();
   };
 
+
+const formatDateSeparator = (date) => {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) {
+    return 'HOJE';
+  }
+  if (date.toDateString() === yesterday.toDateString()) {
+    return 'ONTEM';
+  }
+  return format(date, 'dd/MM/yyyy');
+};
 // NOVO COMPONENTE PARA RENDERIZAR CADA "BALÃO" DE MENSAGEM
 const MessageBubble = ({ message }) => {
   // Função para renderizar o conteúdo da mensagem
@@ -326,9 +340,24 @@ const WhatsappPage = ({ companyId, conversations: initialConversations, onArchiv
               </div>
             </header>
             <main className="flex-grow h-0 overflow-y-auto p-6">
-              {messages.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} />
-              ))}
+              {messages.map((msg, index) => {
+                // Verifica se a data da mensagem atual é diferente da anterior
+                const showDateSeparator = index === 0 || 
+                  format(messages[index - 1].timestamp.toDate(), 'yyyy-MM-dd') !== format(msg.timestamp.toDate(), 'yyyy-MM-dd');
+
+                return (
+                  <div key={msg.id}>
+                    {showDateSeparator && (
+                      <div className="flex justify-center my-4">
+                        <span className="bg-gray-200 text-gray-600 text-xs font-semibold px-3 py-1 rounded-full">
+                          {formatDateSeparator(msg.timestamp.toDate())}
+                        </span>
+                      </div>
+                    )}
+                    <MessageBubble message={msg} />
+                  </div>
+                );
+              })}
               <div ref={chatEndRef} />
             </main>
             <footer className="p-4 bg-gray-100 border-t border-gray-200 flex-shrink-0">

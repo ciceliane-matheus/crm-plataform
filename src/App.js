@@ -177,6 +177,14 @@ export default function App() {
             querySnapshot.forEach((doc) => {
               leadsArray.push({ id: doc.id, ...doc.data() });
             });
+
+            // ORDENA A LISTA PELA DATA MAIS RECENTE
+            leadsArray.sort((a, b) => {
+              const timestampA = a.timestamp?.toDate() || 0;
+              const timestampB = b.timestamp?.toDate() || 0;
+              return timestampB - timestampA; // Ordem decrescente
+            });
+
             setLeads(leadsArray);
           });
           setLoadingCompany(false);
