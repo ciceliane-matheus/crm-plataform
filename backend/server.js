@@ -557,60 +557,38 @@ app.post('/api/evolution/send-message', isAuthorized, async (req, res) => {
   }
 });
 
-async function handleMediaUpload(messageData) { // Agora recebe 'messageData'
+async function handleMediaUpload(messageData) {
   try {
     console.log('[MEDIA HELPER] Iniciando download da Evolution...');
     const url = `${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/CRM_V1`;
-
-    // LÓGICA CORRIGIDA: Pega o ID diretamente de messageData.key.id
+    const messageDetails = messageData.message;
     const messageId = messageData.key?.id;
-    if (!messageId) {
-      throw new Error("Não foi possível encontrar um ID na chave da mensagem de mídia.");
-    }
+    if (!messageId) throw new Error("Não foi possível encontrar um ID na chave da mensagem de mídia.");
 
-    const payload = {
-      message: {
-        key: {
-          id: messageId
-        }
-      }
-    };
-
-    const mediaResponse = await axios.post(
-      url,
-      payload,
-      { headers: { 'apikey': EVOLUTION_API_KEY } }
-    );
-    
+    const payload = { message: { key: { id: messageId } } };
+    const mediaResponse = await axios.post(url, payload, { headers: { 'apikey': EVOLUTION_API_KEY } });
     const base64Data = mediaResponse.data.base64;
     if (!base64Data) throw new Error('Base64 não retornado pela Evolution API.');
 
-    console.log('[MEDIA HELPER] Download concluído. Fazendo upload para o Firebase Storage...');
-    
+    console.log('[MEDIA HELPER] Download concluído. Fazendo upload...');
     const buffer = Buffer.from(base64Data, 'base64');
-    
-    // Pega os detalhes da mídia de dentro de messageData.message
-    const messageDetails = messageData.message;
-    const mimeType = messageDetails.imageMessage?.mimetype || messageDetails.audioMessage?.mimetype || messageDetails.videoMessage?.mimetype || messageDetails.documentMessage?.mimetype || 'application/octet-stream';
+
+    // LÓGICA ATUALIZADA para incluir figurinhas e padronizar documentos
+    const mimeType = messageDetails.imageMessage?.mimetype || messageDetails.audioMessage?.mimetype || messageDetails.videoMessage?.mimetype || messageDetails.documentMessage?.mimetype || messageDetails.stickerMessage?.mimetype || 'application/octet-stream';
+    let mediaType = mimeType.split('/')[0];
+    if (mediaType === 'application') mediaType = 'document'; // Padroniza 'application' para 'document'
+    if (mimeType.includes('webp')) mediaType = 'image'; // Trata figurinhas .webp como imagem
+
     const fileExtension = mimeType.split('/')[1]?.split(';')[0] || 'bin';
     const fileName = `media/${Date.now()}.${fileExtension}`;
-    
     const bucket = storage.bucket();
     const file = bucket.file(fileName);
 
-    await file.save(buffer, {
-      metadata: { contentType: mimeType },
-      public: true
-    });
-
+    await file.save(buffer, { metadata: { contentType: mimeType }, public: true });
     const publicUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
     console.log(`[MEDIA HELPER] Upload concluído. URL Pública: ${publicUrl}`);
-    
-    return {
-        mediaUrl: publicUrl,
-        mediaType: mimeType.split('/')[0]
-    };
 
+    return { mediaUrl: publicUrl, mediaType: mediaType };
   } catch (error) {
     console.error('[MEDIA HELPER] Erro no processamento de mídia:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
     return null;
@@ -642,9 +620,6 @@ app.post('/api/evolution/webhook', async (req, res) => {
   }
 
   // --- Mensagens ---
-
-  // server.js -> Substitua o bloco if (eventData.event === 'messages.upsert') por este
-
   if (eventData.event === 'messages.upsert') {
     try {
       const messageData = eventData.data; // Usar um atalho para clareza
@@ -652,7 +627,7 @@ app.post('/api/evolution/webhook', async (req, res) => {
       const contactNumber = messageData.key.remoteJid.split('@')[0];
       const messageDetails = messageData.message;
       
-      // LÓGICA DE CAPTURA DE NOME CORRIGIDA
+      // LÓGICA DE CAPTURA DE NOME CORRIGIDA E FINAL
       const contactName = messageData.name || messageData.pushName || fromNumber;
       
       const timestamp = new Date(messageData.messageTimestamp * 1000);
@@ -666,11 +641,10 @@ app.post('/api/evolution/webhook', async (req, res) => {
         timestamp: timestamp
       };
 
-      if (messageDetails?.conversation || messageDetails?.extendedTextMessage) {
-        messageToSave.text = messageDetails.conversation || messageDetails.extendedTextMessage.text;
-      }
-      else if (messageDetails?.imageMessage || messageDetails?.audioMessage || messageDetails?.videoMessage || messageDetails?.documentMessage) {
-        // CHAMADA CORRIGIDA: Passando o objeto correto para a função
+      // --- Lógica de Mídia ---
+      // CONDIÇÃO ATUALIZADA para incluir stickerMessage
+      if (messageDetails?.imageMessage || messageDetails?.audioMessage || messageDetails?.videoMessage || messageDetails?.documentMessage || messageDetails?.stickerMessage) {
+        // CHAMADA CORRIGIDA: Passando o objeto de dados completo
         const mediaInfo = await handleMediaUpload(messageData);
         
         if (mediaInfo) {
@@ -681,10 +655,16 @@ app.post('/api/evolution/webhook', async (req, res) => {
           messageToSave.text = '[Erro ao processar mídia]';
         }
       }
+      // --- Lógica de Texto ---
+      else if (messageDetails?.conversation || messageDetails?.extendedTextMessage) {
+        messageToSave.text = messageDetails.conversation || messageDetails.extendedTextMessage.text;
+      }
+      // --- Caso não reconheça ---
       else {
         messageToSave.text = '[Mensagem não suportada]';
       }
 
+      // --- Lógica para encontrar/criar o lead ---
       if (leadQuery.empty && !isFromMe) {
         const newLead = await leadsRef.add({
           name: contactName, // Usando o nome capturado corretamente
@@ -702,8 +682,9 @@ app.post('/api/evolution/webhook', async (req, res) => {
       } else if (!leadQuery.empty) {
         leadDocRef = leadQuery.docs[0].ref;
         leadId = leadQuery.docs[0].id;
-        // Atualiza o nome do lead se ele estiver vazio ou for apenas um número
+        
         const currentLeadData = leadQuery.docs[0].data();
+        // Atualiza o nome do lead se o nome atual for apenas o número e um nome melhor estiver disponível
         if (contactName !== contactNumber && (!currentLeadData.name || currentLeadData.name === contactNumber)) {
             await leadDocRef.update({ name: contactName });
         }
@@ -711,34 +692,36 @@ app.post('/api/evolution/webhook', async (req, res) => {
           lastMessage: messageToSave.text,
           timestamp: timestamp
         });
-      } else {
+      } else { // Se a mensagem for sua (fromMe) e o lead não existir, não faz nada
         return;
       }
 
+      // --- Salva mensagem no Firestore ---
       const messagesRef = leadDocRef.collection('messages');
       await messagesRef.add(messageToSave);
       console.log(`[EVOLUTION WEBHOOK] Mensagem de '${messageToSave.from}' salva para o lead ${leadId}`);
 
+      // --- Encaminha para o n8n ---
       if (!isFromMe) {
         const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
         if (n8nWebhookUrl) {
-          console.log(`[WEBHOOK] Encaminhando dados para o n8n para o lead ${leadId}`);
-          try {
-            await axios.post(n8nWebhookUrl, {
-              messageData: {
-                from: contactNumber,
-                name: contactName,
-                text: messageToSave.text,
-                mediaUrl: messageToSave.mediaUrl || null,
-                mediaType: messageToSave.mediaType || null,
-                timestamp: timestamp
-              },
-              leadId: leadId,
-              companyId: companyId
-            });
-          } catch (n8nError) {
-            console.error("[WEBHOOK] Erro ao encaminhar para o n8n:", n8nError.message);
-          }
+            console.log(`[WEBHOOK] Encaminhando dados para o n8n para o lead ${leadId}`);
+            try {
+                await axios.post(n8nWebhookUrl, { 
+                    messageData: { 
+                        from: contactNumber,
+                        name: contactName,
+                        text: messageToSave.text, // Envia o texto ou o placeholder [Imagem]
+                        mediaUrl: messageToSave.mediaUrl || null, // Envia a URL da mídia, se houver
+                        mediaType: messageToSave.mediaType || null,
+                        timestamp: timestamp
+                    },
+                    leadId: leadId,
+                    companyId: companyId
+                });
+            } catch (n8nError) {
+                console.error("[WEBHOOK] Erro ao encaminhar para o n8n:", n8nError.message);
+            }
         }
       }
 

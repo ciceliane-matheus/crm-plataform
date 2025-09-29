@@ -26,7 +26,11 @@ const MessageBubble = ({ message }) => {
     if (message.mediaUrl) {
       switch (message.mediaType) {
         case 'image':
-          return <img src={message.mediaUrl} alt="Imagem enviada" className="rounded-lg max-w-xs" />;
+          return (
+            <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer">
+              <img src={message.mediaUrl} alt={message.text || "Imagem enviada"} className="rounded-lg max-w-xs cursor-pointer hover:opacity-80 transition-opacity" />
+            </a>
+          );
         case 'audio':
           return <audio controls src={message.mediaUrl} className="w-64" />;
         case 'video':
