@@ -779,6 +779,62 @@ app.post('/api/evolution/instance/logout', isAuthorized, async (req, res) => {
 });
 
 // =================================================================================
+// --- ROTA PARA CALCULADORA DE VENDAS ---
+// =================================================================================
+
+app.post('/api/calculator/simulate', isAuthorized, async (req, res) => {
+  try {
+    const {
+      valorFinanciamento,
+      prazo, // em meses
+      rendaBruta,
+      sistemaAmortizacao // PRICE ou SAC
+    } = req.body;
+
+    // --- Lógica de Cálculo da Prestação (Sistema PRICE) ---
+    // A Caixa geralmente usa uma taxa de juros de referência. Usaremos 8.5% ao ano como exemplo.
+    const taxaJurosAnual = 0.085; 
+    const taxaJurosMensal = Math.pow(1 + taxaJurosAnual, 1/12) - 1;
+    
+    let prestacao = 0;
+
+    if (sistemaAmortizacao === 'PRICE') {
+      const numerador = valorFinanciamento * Math.pow(1 + taxaJurosMensal, prazo) * taxaJurosMensal;
+      const denominador = Math.pow(1 + taxaJurosMensal, prazo) - 1;
+      prestacao = numerador / denominador;
+    } else {
+      // A lógica para o sistema SAC seria diferente, mas por enquanto focamos no PRICE
+      // que é o mais comum no exemplo.
+      // Simplesmente retornamos um valor fixo se não for PRICE.
+      prestacao = (valorFinanciamento / prazo) * (1 + taxaJurosMensal); // Estimativa simples
+    }
+
+    // --- Lógica de Análise de Risco ---
+    // Regra comum: a prestação não pode comprometer mais que 30% da renda bruta.
+    const comprometimentoRenda = (prestacao / rendaBruta) * 100;
+    let statusAvaliacao = "Aprovada";
+    if (comprometimentoRenda > 30) {
+      statusAvaliacao = "Reprovada (Renda Comprometida)";
+    }
+    
+    // --- Monta a resposta ---
+    const resultado = {
+      prestacao: prestacao,
+      status: statusAvaliacao,
+      comprometimentoPercentual: comprometimentoRenda.toFixed(2),
+      // Adicionar outros campos fixos do exemplo se necessário
+      validade: `Validade de ${new Date().toLocaleDateString('pt-BR')} até ${new Date(new Date().setMonth(new Date().getMonth() + 6)).toLocaleDateString('pt-BR')}`
+    };
+
+    res.status(200).json(resultado);
+
+  } catch (error) {
+    console.error('[CALCULATOR] Erro ao simular financiamento:', error);
+    res.status(500).json({ error: 'Falha ao processar a simulação.' });
+  }
+});
+
+// =================================================================================
 // --- INICIALIZAÇÃO DO SERVIDOR ---
 // =================================================================================
 app.listen(port, () => {

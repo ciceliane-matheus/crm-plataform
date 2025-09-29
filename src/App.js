@@ -34,11 +34,13 @@ import {
   Tag,
   Settings,
   ArchiveRestore,
-  Search
+  Search,
+  Calculator
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
+import CalculatorPage from './CalculatorPage';
 
 // Importações para o Firebase
 import { db, auth } from './firebaseConfig';
@@ -233,7 +235,8 @@ export default function App() {
     { id: 'automacao', name: 'Automação de Follow-up', icon: Mail },
     { id: 'whatsapp', name: 'WhatsApp', icon: MessageSquare }, // Nova página adicionada
     { id: 'analise', name: 'Análise de Conversas', icon: TrendingUp },
-    { id: 'reports', name: 'Gerar Relatórios', icon: FileText },
+    { id: 'calculator', name: 'Calculadora de Vendas', icon: Calculator },
+    { id: 'reports', name: 'Gerar Relatórios', icon: FileText }
   ];
 
   const Sidebar = () => (
@@ -466,6 +469,8 @@ export default function App() {
         return <ReportsPage kanbanColumns={kanbanColumns} tags={tags} segments={segments} leads={leads} />;
       default:
         return <Dashboard leads={leads} />;
+      case 'calculator': // <-- NOVO CASE
+        return <CalculatorPage companyId={companyId} leads={leads} />;
     }
   };
   
