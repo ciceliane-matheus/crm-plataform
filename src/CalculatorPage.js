@@ -1,4 +1,4 @@
-// src/CalculatorPage.js (VERSÃO FINAL com Tabela de Parcelas)
+// src/CalculatorPage.js (VERSÃO FINAL E COMPLETA)
 
 import { useState, useEffect } from 'react';
 import { auth } from './firebaseConfig';
@@ -8,9 +8,6 @@ import { Search, Loader2, Download, X, List } from 'lucide-react';
 import Select from 'react-select';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
-// Registra o plugin no jsPDF
-jsPDF.autoTable = autoTable;
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -59,43 +56,51 @@ const CalculatorPage = ({ companyId, leads }) => {
   };
   
   const handleExportPDF = () => {
-    if (!resultado) return;
+    if (!resultado) {
+      toast.error('Nenhum resultado para exportar.');
+      return;
+    }
+
     const doc = new jsPDF();
-    
+    let finalY = 0;
+
     doc.setFontSize(22);
     doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
 
-    // Tabela de Proponente (PRIMEIRA TABELA)
     autoTable(doc, {
-      startY: 30, // Posição inicial fixa
+      startY: 30,
       head: [['DADOS DOS PROPONENTES']],
       body: [
-        ['Cliente', resultado.nomeProponente],
-        ['CPF Cliente', resultado.cpfProponente],
+        ['Cliente', resultado.nomeProponente || '—'],
+        ['CPF Cliente', resultado.cpfProponente || '—'],
       ],
       theme: 'striped',
       headStyles: { fillColor: [79, 70, 229] },
+      didDrawPage: (data) => {
+        finalY = data.cursor.y;
+      }
     });
-    
-    // Tabela de Avaliação (SEGUNDA TABELA)
+
     autoTable(doc, {
-      // AGORA SIM, usamos a posição final da tabela anterior
-      startY: (doc).previousAutoTable.finalY + 10,
+      startY: finalY + 10,
       head: [['DADOS DA AVALIAÇÃO']],
       body: [
-        ['Resultado da Avaliação', resultado.statusAvaliacao],
-        ['Validade', resultado.validade],
-        ['Valor do Imóvel', resultado.valorImovel.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
-        ['Valor Financiamento', resultado.valorFinanciamento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
-        ['(Primeira) Prestação', resultado.prestacao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
-        ['Prazo (Meses)', resultado.prazo],
-        ['Sistema de Amortização', resultado.sistemaAmortizacao],
-        ['Renda Bruta', resultado.rendaBruta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+        ['Resultado da Avaliação', resultado.statusAvaliacao || '—'],
+        ['Validade', resultado.validade || '—'],
+        ['Valor do Imóvel', resultado.valorImovel?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '—'],
+        ['Valor Financiamento', resultado.valorFinanciamento?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '—'],
+        ['(Primeira) Prestação', resultado.prestacao?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '—'],
+        ['Prazo (Meses)', resultado.prazo || '—'],
+        ['Sistema de Amortização', resultado.sistemaAmortizacao || '—'],
+        ['Renda Bruta', resultado.rendaBruta?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '—'],
       ],
       theme: 'striped',
       headStyles: { fillColor: [79, 70, 229] },
+      didDrawPage: (data) => {
+        finalY = data.cursor.y;
+      }
     });
-    
+
     if (resultado.parcelas && resultado.parcelas.length > 0) {
       doc.addPage();
       doc.setFontSize(18);
@@ -113,8 +118,12 @@ const CalculatorPage = ({ companyId, leads }) => {
         theme: 'grid',
       });
     }
-    
-    doc.save(`Avaliacao_Risco_${resultado.nomeProponente.replace(/ /g, '_')}.pdf`);
+
+    const nomeArquivo = resultado.nomeProponente && resultado.nomeProponente !== 'Não informado'
+      ? resultado.nomeProponente.replace(/ /g, '_')
+      : 'Simulacao';
+
+    doc.save(`Avaliacao_Risco_${nomeArquivo}.pdf`);
   };
 
   return (
@@ -168,7 +177,6 @@ const CalculatorPage = ({ companyId, leads }) => {
         </div>
       </div>
 
-      {/* MODAL DAS PARCELAS */}
       {isParcelasModalOpen && resultado && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
