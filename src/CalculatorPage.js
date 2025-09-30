@@ -62,6 +62,8 @@ const CalculatorPage = ({ companyId, leads }) => {
     return;
   }
   const doc = new jsPDF();
+  let finalY = 0;
+
   doc.setFontSize(22);
   doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
 
