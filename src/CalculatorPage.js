@@ -65,9 +65,9 @@ const CalculatorPage = ({ companyId, leads }) => {
     doc.setFontSize(22);
     doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
 
-    // CHAMADA CORRIGIDA
+    // Tabela de Proponente (PRIMEIRA TABELA)
     autoTable(doc, {
-      startY: 30,
+      startY: 30, // Posição inicial fixa
       head: [['DADOS DOS PROPONENTES']],
       body: [
         ['Cliente', resultado.nomeProponente],
@@ -77,9 +77,10 @@ const CalculatorPage = ({ companyId, leads }) => {
       headStyles: { fillColor: [79, 70, 229] },
     });
     
-    // CHAMADA CORRIGIDA
+    // Tabela de Avaliação (SEGUNDA TABELA)
     autoTable(doc, {
-      startY: doc.previousAutoTable.finalY + 10,
+      // AGORA SIM, usamos a posição final da tabela anterior
+      startY: (doc).previousAutoTable.finalY + 10,
       head: [['DADOS DA AVALIAÇÃO']],
       body: [
         ['Resultado da Avaliação', resultado.statusAvaliacao],
@@ -99,8 +100,6 @@ const CalculatorPage = ({ companyId, leads }) => {
       doc.addPage();
       doc.setFontSize(18);
       doc.text("Detalhamento das Parcelas", 105, 20, { align: 'center' });
-      
-      // CHAMADA CORRIGIDA
       autoTable(doc, {
         startY: 30,
         head: [['Mês', 'Prestação', 'Juros', 'Amortização', 'Saldo Devedor']],
