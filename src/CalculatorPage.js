@@ -1,4 +1,4 @@
-// src/CalculatorPage.js (VERSÃO FINAL E COMPLETA)
+// src/CalculatorPage.js (VERSÃO FINAL, CORRIGIDA E COMPLETA)
 
 import { useState, useEffect } from 'react';
 import { auth } from './firebaseConfig';
@@ -44,7 +44,16 @@ const CalculatorPage = ({ companyId, leads }) => {
       const user = auth.currentUser;
       if (!user) throw new Error("Usuário não autenticado.");
       const token = await user.getIdToken();
-      const payload = { valorImovel, valorFinanciamento, prazo, rendaBruta, sistemaAmortizacao, indexador, proponente: selectedLead?.lead, companyId };
+      const payload = { 
+          valorImovel: valorImovel ? parseFloat(valorImovel.replace(/\./g, '').replace(',', '.')) : 0, 
+          valorFinanciamento: valorFinanciamento ? parseFloat(valorFinanciamento.replace(/\./g, '').replace(',', '.')) : 0,
+          prazo: Number(prazo), 
+          rendaBruta: rendaBruta ? parseFloat(rendaBruta.replace(/\./g, '').replace(',', '.')) : 0,
+          sistemaAmortizacao, 
+          indexador, 
+          proponente: selectedLead?.lead, 
+          companyId 
+      };
       const config = { headers: { Authorization: `Bearer ${token}` } };
       const response = await axios.post(`${BACKEND_URL}/api/calculator/simulate`, payload, config);
       setResultado(response.data);
@@ -61,35 +70,25 @@ const CalculatorPage = ({ companyId, leads }) => {
       toast.error('Nenhum resultado para exportar.');
       return;
     }
-
     const doc = new jsPDF();
     let finalY = 0;
-
     doc.setFontSize(22);
     doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
-
-    // Tabela de Proponente
     autoTable(doc, {
       startY: 30,
       head: [['DADOS DOS PROPONENTES']],
       body: [
-        // CORREÇÃO: Passando os dados no formato correto [ 'Chave', 'Valor' ]
         ['Cliente', resultado.nomeProponente || '—'],
         ['CPF Cliente', resultado.cpfProponente || '—'],
       ],
       theme: 'striped',
       headStyles: { fillColor: [79, 70, 229] },
-      didDrawPage: (data) => {
-        finalY = data.cursor.y;
-      }
+      didDrawPage: (data) => { finalY = data.cursor.y; }
     });
-
-    // Tabela de Avaliação
     autoTable(doc, {
       startY: finalY + 10,
       head: [['DADOS DA AVALIAÇÃO']],
       body: [
-        // CORREÇÃO: Passando os dados no formato correto [ 'Chave', 'Valor' ]
         ['Resultado da Avaliação', resultado.statusAvaliacao || '—'],
         ['Validade', resultado.validade || '—'],
         ['Valor do Imóvel', (resultado.valorImovel || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
@@ -102,7 +101,6 @@ const CalculatorPage = ({ companyId, leads }) => {
       theme: 'striped',
       headStyles: { fillColor: [79, 70, 229] },
     });
-    
     if (resultado.parcelas && resultado.parcelas.length > 0) {
       doc.addPage();
       doc.setFontSize(18);
@@ -120,53 +118,9 @@ const CalculatorPage = ({ companyId, leads }) => {
         theme: 'grid',
       });
     }
-
     const nomeArquivo = resultado.nomeProponente && resultado.nomeProponente !== 'Não informado'
       ? resultado.nomeProponente.replace(/ /g, '_')
       : 'Simulacao';
-
-    doc.save(`Avaliacao_Risco_${nomeArquivo}.pdf`);
-  };
-
-  autoTable(doc, {
-    didDrawPage: (data) => { finalY = data.cursor.y },
-    startY: doc.lastAutoTable.finalY + 10,
-    head: [['DADOS DA AVALIAÇÃO']],
-    body: [
-      ['Resultado da Avaliação', resultado.statusAvaliacao || '—'],
-      ['Validade', resultado.validade || '—'],
-      ['Valor do Imóvel', (resultado.valorImovel || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
-      ['Valor Financiamento', (resultado.valorFinanciamento || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
-      ['(Primeira) Prestação', (resultado.prestacao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
-      ['Prazo (Meses)', resultado.prazo || '—'],
-      ['Sistema de Amortização', resultado.sistemaAmortizacao || '—'],
-      ['Renda Bruta', (resultado.rendaBruta || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
-    ],
-    theme: 'striped', headStyles: { fillColor: [79, 70, 229] }
-  });
-
-    if (resultado.parcelas && resultado.parcelas.length > 0) {
-      doc.addPage();
-      doc.setFontSize(18);
-      doc.text("Detalhamento das Parcelas", 105, 20, { align: 'center' });
-      autoTable(doc, {
-        startY: 30,
-        head: [['Mês', 'Prestação', 'Juros', 'Amortização', 'Saldo Devedor']],
-        body: resultado.parcelas.map(p => [
-          p.mes,
-          Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-          Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-          Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-          Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-        ]),
-        theme: 'grid',
-      });
-    }
-
-    const nomeArquivo = resultado.nomeProponente && resultado.nomeProponente !== 'Não informado'
-      ? resultado.nomeProponente.replace(/ /g, '_')
-      : 'Simulacao';
-
     doc.save(`Avaliacao_Risco_${nomeArquivo}.pdf`);
   };
 
@@ -195,71 +149,51 @@ const CalculatorPage = ({ companyId, leads }) => {
                     }}
                 />
                 </div>
-
                 <div>
                 <label className="block text-sm font-medium text-gray-700">Valor do Imóvel</label>
                 <CurrencyInput
                     name="valorImovel"
                     value={valorImovel}
-                    onValueChange={(value) => setValorImovel(value)}
+                    onValueChange={(value) => setValorImovel(value || '')}
                     className="w-full mt-1 p-2 border rounded-lg"
                     intlConfig={{ locale: 'pt-BR', currency: 'BRL' }}
                     placeholder="R$ 0,00"
                     required
                 />
                 </div>
-
                 <div>
                 <label className="block text-sm font-medium text-gray-700">Valor do Financiamento</label>
                 <CurrencyInput
                     name="valorFinanciamento"
                     value={valorFinanciamento}
-                    onValueChange={(value) => setValorFinanciamento(value)}
+                    onValueChange={(value) => setValorFinanciamento(value || '')}
                     className="w-full mt-1 p-2 border rounded-lg"
                     intlConfig={{ locale: 'pt-BR', currency: 'BRL' }}
                     placeholder="R$ 0,00"
                     required
                 />
                 </div>
-
                 <div>
                 <label className="block text-sm font-medium text-gray-700">Prazo (Meses)</label>
                 <input type="number" value={prazo} onChange={e => setPrazo(e.target.value)} className="w-full mt-1 p-2 border rounded-lg" placeholder="Ex: 420" required />
                 </div>
-                
                 <div>
                 <label className="block text-sm font-medium text-gray-700">Renda Bruta Mensal</label>
                 <CurrencyInput
                     name="rendaBruta"
                     value={rendaBruta}
-                    onValueChange={(value) => setRendaBruta(value)}
+                    onValueChange={(value) => setRendaBruta(value || '')}
                     className="w-full mt-1 p-2 border rounded-lg"
                     intlConfig={{ locale: 'pt-BR', currency: 'BRL' }}
                     placeholder="R$ 0,00"
                     required
                 />
                 </div>
-
                 <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Sistema de Amortização</label>
-                    <select value={sistemaAmortizacao} onChange={e => setSistemaAmortizacao(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white">
-                    <option value="PRICE">PRICE</option>
-                    <option value="SAC">SAC</option>
-                    </select>
+                <div><label className="block text-sm font-medium text-gray-700">Sistema de Amortização</label><select value={sistemaAmortizacao} onChange={e => setSistemaAmortizacao(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white"><option value="PRICE">PRICE</option><option value="SAC">SAC</option></select></div>
+                <div><label className="block text-sm font-medium text-gray-700">Indexador</label><select value={indexador} onChange={e => setIndexador(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white"><option value="TR">TR</option><option value="IPCA">IPCA</option></select></div>
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Indexador</label>
-                    <select value={indexador} onChange={e => setIndexador(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white">
-                    <option value="TR">TR</option>
-                    <option value="IPCA">IPCA</option>
-                    </select>
-                </div>
-                </div>
-                
-                <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 disabled:bg-indigo-400 flex justify-center items-center" disabled={isLoading}>
-                {isLoading ? <><Loader2 className="animate-spin h-5 w-5 mr-2" />Calculando...</> : 'Calcular Simulação'}
-                </button>
+                <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 disabled:bg-indigo-400 flex justify-center items-center" disabled={isLoading}>{isLoading ? <><Loader2 className="animate-spin h-5 w-5 mr-2" />Calculando...</> : 'Calcular Simulação'}</button>
             </form>
         </div>
         <div className="bg-white p-6 rounded-xl shadow-lg flex flex-col">
@@ -287,7 +221,6 @@ const CalculatorPage = ({ companyId, leads }) => {
           </div>
         </div>
       </div>
-
       {isParcelasModalOpen && resultado && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
@@ -325,4 +258,6 @@ const CalculatorPage = ({ companyId, leads }) => {
       )}
     </div>
   );
+};
+
 export default CalculatorPage;
