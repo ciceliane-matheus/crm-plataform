@@ -58,19 +58,63 @@ const CalculatorPage = ({ companyId, leads }) => {
   const handleExportPDF = () => {
     if (!resultado) return;
     const doc = new jsPDF();
+    
+    // Título
     doc.setFontSize(22);
     doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
-    doc.autoTable({ startY: 30, head: [['DADOS DOS PROPONENTES']], body: [['Cliente', resultado.nomeProponente], ['CPF Cliente', resultado.cpfProponente]], theme: 'striped', headStyles: { fillColor: [79, 70, 229] } });
-    doc.autoTable({ startY: doc.previousAutoTable.finalY + 10, head: [['DADOS DA AVALIAÇÃO']], body: [
-        ['Resultado', resultado.statusAvaliacao], ['Validade', resultado.validade],
+
+    // Tabela de Proponente
+    doc.autoTable({
+      startY: 30,
+      head: [['DADOS DOS PROPONENTES']],
+      body: [
+        // CORREÇÃO: Acessando os dados do proponente corretamente
+        ['Cliente', resultado.nomeProponente],
+        ['CPF Cliente', resultado.cpfProponente],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [79, 70, 229] }, // Cor roxa do tema
+    });
+    
+    // Tabela de Avaliação
+    doc.autoTable({
+      startY: doc.previousAutoTable.finalY + 10,
+      head: [['DADOS DA AVALIAÇÃO']],
+      body: [
+        ['Resultado da Avaliação', resultado.statusAvaliacao],
+        ['Validade', resultado.validade],
         ['Valor do Imóvel', resultado.valorImovel.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
         ['Valor Financiamento', resultado.valorFinanciamento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+        // CORREÇÃO: Usando o termo "(Primeira) Prestação" para clareza em ambos os sistemas
         ['(Primeira) Prestação', resultado.prestacao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
         ['Prazo (Meses)', resultado.prazo],
         ['Sistema de Amortização', resultado.sistemaAmortizacao],
         ['Renda Bruta', resultado.rendaBruta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
-    ], theme: 'striped', headStyles: { fillColor: [79, 70, 229] } });
-    doc.save(`Avaliacao_Risco_${resultado.nomeProponente.replace(' ', '_')}.pdf`);
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [79, 70, 229] },
+    });
+    
+    // Adiciona a tabela de parcelas se houver mais de uma
+    if (resultado.parcelas && resultado.parcelas.length > 0) {
+      doc.addPage();
+      doc.setFontSize(18);
+      doc.text("Detalhamento das Parcelas", 105, 20, { align: 'center' });
+      doc.autoTable({
+        startY: 30,
+        head: [['Mês', 'Prestação', 'Juros', 'Amortização', 'Saldo Devedor']],
+        body: resultado.parcelas.map(p => [
+          p.mes,
+          Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+        ]),
+        theme: 'grid',
+      });
+    }
+    
+    doc.save(`Avaliacao_Risco_${resultado.nomeProponente.replace(/ /g, '_')}.pdf`);
   };
 
   return (
