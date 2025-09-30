@@ -7,7 +7,10 @@ import { toast } from 'react-hot-toast';
 import { Search, Loader2, Download, X, List } from 'lucide-react';
 import Select from 'react-select';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
+
+// Registra o plugin no jsPDF
+jsPDF.autoTable = autoTable;
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
