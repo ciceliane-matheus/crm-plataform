@@ -62,25 +62,23 @@ const CalculatorPage = ({ companyId, leads }) => {
     if (!resultado) return;
     const doc = new jsPDF();
     
-    // Título
     doc.setFontSize(22);
     doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
 
-    // Tabela de Proponente
-    doc.autoTable({
+    // CHAMADA CORRIGIDA
+    autoTable(doc, {
       startY: 30,
       head: [['DADOS DOS PROPONENTES']],
       body: [
-        // CORREÇÃO: Acessando os dados do proponente corretamente
         ['Cliente', resultado.nomeProponente],
         ['CPF Cliente', resultado.cpfProponente],
       ],
       theme: 'striped',
-      headStyles: { fillColor: [79, 70, 229] }, // Cor roxa do tema
+      headStyles: { fillColor: [79, 70, 229] },
     });
     
-    // Tabela de Avaliação
-    doc.autoTable({
+    // CHAMADA CORRIGIDA
+    autoTable(doc, {
       startY: doc.previousAutoTable.finalY + 10,
       head: [['DADOS DA AVALIAÇÃO']],
       body: [
@@ -88,7 +86,6 @@ const CalculatorPage = ({ companyId, leads }) => {
         ['Validade', resultado.validade],
         ['Valor do Imóvel', resultado.valorImovel.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
         ['Valor Financiamento', resultado.valorFinanciamento.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
-        // CORREÇÃO: Usando o termo "(Primeira) Prestação" para clareza em ambos os sistemas
         ['(Primeira) Prestação', resultado.prestacao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
         ['Prazo (Meses)', resultado.prazo],
         ['Sistema de Amortização', resultado.sistemaAmortizacao],
@@ -98,12 +95,13 @@ const CalculatorPage = ({ companyId, leads }) => {
       headStyles: { fillColor: [79, 70, 229] },
     });
     
-    // Adiciona a tabela de parcelas se houver mais de uma
     if (resultado.parcelas && resultado.parcelas.length > 0) {
       doc.addPage();
       doc.setFontSize(18);
       doc.text("Detalhamento das Parcelas", 105, 20, { align: 'center' });
-      doc.autoTable({
+      
+      // CHAMADA CORRIGIDA
+      autoTable(doc, {
         startY: 30,
         head: [['Mês', 'Prestação', 'Juros', 'Amortização', 'Saldo Devedor']],
         body: resultado.parcelas.map(p => [
