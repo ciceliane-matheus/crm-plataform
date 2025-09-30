@@ -1,13 +1,17 @@
-import { useState } from 'react';
-import { auth } from './firebaseConfig'; // Importa a autenticação do Firebase
+// src/CalculatorPage.js (com busca de leads)
+
+import { useState, useEffect } from 'react';
+import { auth } from './firebaseConfig';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { Search, Loader2 } from 'lucide-react';
+import Select from 'react-select'; // <-- NOVA IMPORTAÇÃO
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const CalculatorPage = ({ companyId, leads }) => {
   // Estados para os campos de entrada
+  const [selectedLead, setSelectedLead] = useState(null); // Novo estado para o lead selecionado
   const [valorImovel, setValorImovel] = useState(350000);
   const [valorFinanciamento, setValorFinanciamento] = useState(280000);
   const [prazo, setPrazo] = useState(420);
@@ -18,18 +22,33 @@ const CalculatorPage = ({ companyId, leads }) => {
   // Estado para os resultados
   const [resultado, setResultado] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Transforma a lista de leads para o formato que o react-select espera
+  const leadOptions = leads.map(lead => ({
+    value: lead.id,
+    label: `${lead.name} (${lead.phone || 'sem número'})`,
+    lead: lead // Armazena o objeto completo do lead
+  }));
 
-  // Função final que se comunica com o backend
+  // Efeito para preencher os dados quando um lead é selecionado
+  useEffect(() => {
+    if (selectedLead) {
+      // Aqui você preencheria os dados. Como não temos renda no lead,
+      // vamos preencher apenas o que temos.
+      // Ex: Se tivéssemos a renda: setRendaBruta(selectedLead.lead.renda || 7800);
+      toast.success(`Lead "${selectedLead.label}" selecionado.`);
+    }
+  }, [selectedLead]);
+
+
   const handleCalculate = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    setResultado(null); // Limpa o resultado anterior
+    setResultado(null);
 
     try {
       const user = auth.currentUser;
-      if (!user) {
-        throw new Error("Usuário não autenticado.");
-      }
+      if (!user) throw new Error("Usuário não autenticado.");
       const token = await user.getIdToken();
 
       const payload = {
@@ -37,22 +56,15 @@ const CalculatorPage = ({ companyId, leads }) => {
         prazo: Number(prazo),
         rendaBruta: Number(rendaBruta),
         sistemaAmortizacao: sistemaAmortizacao,
-        companyId: companyId // Essencial para o middleware de autorização
+        companyId: companyId
       };
 
-      const config = {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      };
-      
+      const config = { headers: { Authorization: `Bearer ${token}` } };
       const response = await axios.post(`${BACKEND_URL}/api/calculator/simulate`, payload, config);
-      
       setResultado(response.data);
-
     } catch (error) {
       console.error("Erro ao calcular:", error);
-      toast.error("Falha ao calcular a simulação. Verifique o console.");
+      toast.error("Falha ao calcular a simulação.");
     } finally {
       setIsLoading(false);
     }
@@ -73,13 +85,21 @@ const CalculatorPage = ({ companyId, leads }) => {
           <h3 className="text-xl font-semibold mb-4 border-b pb-2">Dados da Simulação</h3>
           
           <form onSubmit={handleCalculate} className="space-y-4">
-            {/* Busca de Lead - Funcionalidade futura */}
-            <div className="opacity-50">
-              <label className="block text-sm font-medium text-gray-700">Buscar Lead (em breve)</label>
-              <div className="mt-1 relative">
-                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input type="text" placeholder="Comece a digitar o nome de um lead..." className="w-full bg-gray-100 rounded-lg py-2 pl-10 pr-3 text-sm" disabled />
-              </div>
+            {/* CAMPO DE BUSCA ATUALIZADO */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Buscar Lead</label>
+              <Select
+                options={leadOptions}
+                onChange={setSelectedLead}
+                value={selectedLead}
+                placeholder="Comece a digitar o nome de um lead..."
+                isClearable
+                className="mt-1"
+                styles={{
+                    control: (base) => ({ ...base, borderColor: '#D1D5DB', borderRadius: '0.5rem', padding: '0.1rem' }),
+                    option: (base, { isFocused, isSelected }) => ({ ...base, backgroundColor: isSelected ? '#4f46e5' : isFocused ? '#e0e7ff' : base.backgroundColor, color: isSelected ? 'white' : 'black' })
+                }}
+              />
             </div>
 
             <div>
@@ -132,7 +152,7 @@ const CalculatorPage = ({ companyId, leads }) => {
           </form>
         </div>
 
-        {/* Coluna de Resultados */}
+        {/* Coluna de Resultados (sem alteração) */}
         <div className="bg-white p-6 rounded-xl shadow-lg">
           <h3 className="text-xl font-semibold mb-4 border-b pb-2">Resultado da Avaliação</h3>
           {isLoading ? (
