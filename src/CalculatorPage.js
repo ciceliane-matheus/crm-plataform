@@ -8,15 +8,16 @@ import { Search, Loader2, Download, X, List } from 'lucide-react';
 import Select from 'react-select';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import CurrencyInput from 'react-currency-input-field';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 const CalculatorPage = ({ companyId, leads }) => {
   const [selectedLead, setSelectedLead] = useState(null);
-  const [valorImovel, setValorImovel] = useState(350000);
-  const [valorFinanciamento, setValorFinanciamento] = useState(280000);
+  const [valorImovel, setValorImovel] = useState('');
+  const [valorFinanciamento, setValorFinanciamento] = useState('');
   const [prazo, setPrazo] = useState(420);
-  const [rendaBruta, setRendaBruta] = useState(7800);
+  const [rendaBruta, setRendaBruta] = useState('');
   const [sistemaAmortizacao, setSistemaAmortizacao] = useState('PRICE');
   const [indexador, setIndexador] = useState('TR');
   const [resultado, setResultado] = useState(null);
@@ -56,50 +57,40 @@ const CalculatorPage = ({ companyId, leads }) => {
   };
   
   const handleExportPDF = () => {
-    if (!resultado) {
-      toast.error('Nenhum resultado para exportar.');
-      return;
-    }
+  if (!resultado) {
+    toast.error('Nenhum resultado para exportar.');
+    return;
+  }
+  const doc = new jsPDF();
+  doc.setFontSize(22);
+  doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
 
-    const doc = new jsPDF();
-    let finalY = 0;
+  autoTable(doc, {
+    startY: 30,
+    head: [['DADOS DOS PROPONENTES']],
+    body: [
+      ['Cliente', resultado.nomeProponente || '—'],
+      ['CPF Cliente', resultado.cpfProponente || '—'],
+    ],
+    theme: 'striped', headStyles: { fillColor: [79, 70, 229] }
+  });
 
-    doc.setFontSize(22);
-    doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
-
-    autoTable(doc, {
-      startY: 30,
-      head: [['DADOS DOS PROPONENTES']],
-      body: [
-        ['Cliente', resultado.nomeProponente || '—'],
-        ['CPF Cliente', resultado.cpfProponente || '—'],
-      ],
-      theme: 'striped',
-      headStyles: { fillColor: [79, 70, 229] },
-      didDrawPage: (data) => {
-        finalY = data.cursor.y;
-      }
-    });
-
-    autoTable(doc, {
-      startY: finalY + 10,
-      head: [['DADOS DA AVALIAÇÃO']],
-      body: [
-        ['Resultado da Avaliação', resultado.statusAvaliacao || '—'],
-        ['Validade', resultado.validade || '—'],
-        ['Valor do Imóvel', resultado.valorImovel?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '—'],
-        ['Valor Financiamento', resultado.valorFinanciamento?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '—'],
-        ['(Primeira) Prestação', resultado.prestacao?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '—'],
-        ['Prazo (Meses)', resultado.prazo || '—'],
-        ['Sistema de Amortização', resultado.sistemaAmortizacao || '—'],
-        ['Renda Bruta', resultado.rendaBruta?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || '—'],
-      ],
-      theme: 'striped',
-      headStyles: { fillColor: [79, 70, 229] },
-      didDrawPage: (data) => {
-        finalY = data.cursor.y;
-      }
-    });
+  autoTable(doc, {
+    didDrawPage: (data) => { finalY = data.cursor.y },
+    startY: doc.lastAutoTable.finalY + 10,
+    head: [['DADOS DA AVALIAÇÃO']],
+    body: [
+      ['Resultado da Avaliação', resultado.statusAvaliacao || '—'],
+      ['Validade', resultado.validade || '—'],
+      ['Valor do Imóvel', (resultado.valorImovel || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+      ['Valor Financiamento', (resultado.valorFinanciamento || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+      ['(Primeira) Prestação', (resultado.prestacao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+      ['Prazo (Meses)', resultado.prazo || '—'],
+      ['Sistema de Amortização', resultado.sistemaAmortizacao || '—'],
+      ['Renda Bruta', (resultado.rendaBruta || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+    ],
+    theme: 'striped', headStyles: { fillColor: [79, 70, 229] }
+  });
 
     if (resultado.parcelas && resultado.parcelas.length > 0) {
       doc.addPage();
@@ -136,19 +127,86 @@ const CalculatorPage = ({ companyId, leads }) => {
         <div className="bg-white p-6 rounded-xl shadow-lg">
             <h3 className="text-xl font-semibold mb-4 border-b pb-2">Dados da Simulação</h3>
             <form onSubmit={handleCalculate} className="space-y-4">
-              <div>
+                <div>
                 <label className="block text-sm font-medium text-gray-700">Buscar Lead</label>
-                <Select options={leadOptions} onChange={setSelectedLead} value={selectedLead} placeholder="Comece a digitar o nome de um lead..." isClearable className="mt-1" styles={{ control: (base) => ({ ...base, borderColor: '#D1D5DB', borderRadius: '0.5rem', padding: '0.1rem' }), option: (base, { isFocused, isSelected }) => ({ ...base, backgroundColor: isSelected ? '#4f46e5' : isFocused ? '#e0e7ff' : base.backgroundColor, color: isSelected ? 'white' : 'black' })}}/>
-              </div>
-              <div><label className="block text-sm font-medium text-gray-700">Valor do Imóvel (R$)</label><input type="number" value={valorImovel} onChange={e => setValorImovel(e.target.value)} className="w-full mt-1 p-2 border rounded-lg" required /></div>
-              <div><label className="block text-sm font-medium text-gray-700">Valor do Financiamento (R$)</label><input type="number" value={valorFinanciamento} onChange={e => setValorFinanciamento(e.target.value)} className="w-full mt-1 p-2 border rounded-lg" required /></div>
-              <div><label className="block text-sm font-medium text-gray-700">Prazo (Meses)</label><input type="number" value={prazo} onChange={e => setPrazo(e.target.value)} className="w-full mt-1 p-2 border rounded-lg" required /></div>
-              <div><label className="block text-sm font-medium text-gray-700">Renda Bruta Mensal (R$)</label><input type="number" value={rendaBruta} onChange={e => setRendaBruta(e.target.value)} className="w-full mt-1 p-2 border rounded-lg" required /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700">Sistema de Amortização</label><select value={sistemaAmortizacao} onChange={e => setSistemaAmortizacao(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white"><option value="PRICE">PRICE</option><option value="SAC">SAC</option></select></div>
-                <div><label className="block text-sm font-medium text-gray-700">Indexador</label><select value={indexador} onChange={e => setIndexador(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white"><option value="TR">TR</option><option value="IPCA">IPCA</option></select></div>
-              </div>
-              <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 disabled:bg-indigo-400 flex justify-center items-center" disabled={isLoading}>{isLoading ? <><Loader2 className="animate-spin h-5 w-5 mr-2" />Calculando...</> : 'Calcular Simulação'}</button>
+                <Select
+                    options={leadOptions}
+                    onChange={setSelectedLead}
+                    value={selectedLead}
+                    placeholder="Comece a digitar o nome de um lead..."
+                    isClearable
+                    className="mt-1"
+                    styles={{
+                        control: (base) => ({ ...base, borderColor: '#D1D5DB', borderRadius: '0.5rem', padding: '0.1rem' }),
+                        option: (base, { isFocused, isSelected }) => ({ ...base, backgroundColor: isSelected ? '#4f46e5' : isFocused ? '#e0e7ff' : base.backgroundColor, color: isSelected ? 'white' : 'black' })
+                    }}
+                />
+                </div>
+
+                <div>
+                <label className="block text-sm font-medium text-gray-700">Valor do Imóvel</label>
+                <CurrencyInput
+                    name="valorImovel"
+                    value={valorImovel}
+                    onValueChange={(value) => setValorImovel(value)}
+                    className="w-full mt-1 p-2 border rounded-lg"
+                    intlConfig={{ locale: 'pt-BR', currency: 'BRL' }}
+                    placeholder="R$ 0,00"
+                    required
+                />
+                </div>
+
+                <div>
+                <label className="block text-sm font-medium text-gray-700">Valor do Financiamento</label>
+                <CurrencyInput
+                    name="valorFinanciamento"
+                    value={valorFinanciamento}
+                    onValueChange={(value) => setValorFinanciamento(value)}
+                    className="w-full mt-1 p-2 border rounded-lg"
+                    intlConfig={{ locale: 'pt-BR', currency: 'BRL' }}
+                    placeholder="R$ 0,00"
+                    required
+                />
+                </div>
+
+                <div>
+                <label className="block text-sm font-medium text-gray-700">Prazo (Meses)</label>
+                <input type="number" value={prazo} onChange={e => setPrazo(e.target.value)} className="w-full mt-1 p-2 border rounded-lg" placeholder="Ex: 420" required />
+                </div>
+                
+                <div>
+                <label className="block text-sm font-medium text-gray-700">Renda Bruta Mensal</label>
+                <CurrencyInput
+                    name="rendaBruta"
+                    value={rendaBruta}
+                    onValueChange={(value) => setRendaBruta(value)}
+                    className="w-full mt-1 p-2 border rounded-lg"
+                    intlConfig={{ locale: 'pt-BR', currency: 'BRL' }}
+                    placeholder="R$ 0,00"
+                    required
+                />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Sistema de Amortização</label>
+                    <select value={sistemaAmortizacao} onChange={e => setSistemaAmortizacao(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white">
+                    <option value="PRICE">PRICE</option>
+                    <option value="SAC">SAC</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Indexador</label>
+                    <select value={indexador} onChange={e => setIndexador(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white">
+                    <option value="TR">TR</option>
+                    <option value="IPCA">IPCA</option>
+                    </select>
+                </div>
+                </div>
+                
+                <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 disabled:bg-indigo-400 flex justify-center items-center" disabled={isLoading}>
+                {isLoading ? <><Loader2 className="animate-spin h-5 w-5 mr-2" />Calculando...</> : 'Calcular Simulação'}
+                </button>
             </form>
         </div>
         <div className="bg-white p-6 rounded-xl shadow-lg flex flex-col">
