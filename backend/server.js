@@ -782,54 +782,86 @@ app.post('/api/evolution/instance/logout', isAuthorized, async (req, res) => {
 // --- ROTA PARA CALCULADORA DE VENDAS ---
 // =================================================================================
 
+// server.js -> Substitua a rota da calculadora por esta versão completa
+
 app.post('/api/calculator/simulate', isAuthorized, async (req, res) => {
   try {
     const {
+      valorImovel,
       valorFinanciamento,
-      prazo, // em meses
+      prazo,
       rendaBruta,
-      sistemaAmortizacao // PRICE ou SAC
+      sistemaAmortizacao,
+      indexador,
+      proponente
     } = req.body;
 
-    // --- Lógica de Cálculo da Prestação (Sistema PRICE) ---
-    // A Caixa geralmente usa uma taxa de juros de referência. Usaremos 8.5% ao ano como exemplo.
-    const taxaJurosAnual = 0.085; 
+    const taxaJurosAnual = 0.085;
     const taxaJurosMensal = Math.pow(1 + taxaJurosAnual, 1/12) - 1;
     
-    let prestacao = 0;
+    let primeiraPrestacao = 0;
+    const parcelas = [];
+    let saldoDevedor = valorFinanciamento;
 
     if (sistemaAmortizacao === 'PRICE') {
-      const numerador = valorFinanciamento * Math.pow(1 + taxaJurosMensal, prazo) * taxaJurosMensal;
-      const denominador = Math.pow(1 + taxaJurosMensal, prazo) - 1;
-      prestacao = numerador / denominador;
-    } else {
-      // A lógica para o sistema SAC seria diferente, mas por enquanto focamos no PRICE
-      // que é o mais comum no exemplo.
-      // Simplesmente retornamos um valor fixo se não for PRICE.
-      prestacao = (valorFinanciamento / prazo) * (1 + taxaJurosMensal); // Estimativa simples
+      const pmt = (valorFinanciamento * Math.pow(1 + taxaJurosMensal, prazo) * taxaJurosMensal) / (Math.pow(1 + taxaJurosMensal, prazo) - 1);
+      primeiraPrestacao = pmt;
+      for (let i = 1; i <= prazo; i++) {
+        const juros = saldoDevedor * taxaJurosMensal;
+        const amortizacao = pmt - juros;
+        saldoDevedor -= amortizacao;
+        parcelas.push({
+          mes: i,
+          valor: pmt.toFixed(2),
+          juros: juros.toFixed(2),
+          amortizacao: amortizacao.toFixed(2),
+          saldoDevedor: saldoDevedor.toFixed(2)
+        });
+      }
+    } else if (sistemaAmortizacao === 'SAC') {
+      const amortizacao = valorFinanciamento / prazo;
+      for (let i = 1; i <= prazo; i++) {
+        const juros = saldoDevedor * taxaJurosMensal;
+        const pmt = amortizacao + juros;
+        if (i === 1) {
+          primeiraPrestacao = pmt;
+        }
+        saldoDevedor -= amortizacao;
+        parcelas.push({
+          mes: i,
+          valor: pmt.toFixed(2),
+          juros: juros.toFixed(2),
+          amortizacao: amortizacao.toFixed(2),
+          saldoDevedor: saldoDevedor.toFixed(2)
+        });
+      }
     }
 
-    // --- Lógica de Análise de Risco ---
-    // Regra comum: a prestação não pode comprometer mais que 30% da renda bruta.
-    const comprometimentoRenda = (prestacao / rendaBruta) * 100;
-    let statusAvaliacao = "Aprovada";
+    const comprometimentoRenda = (primeiraPrestacao / rendaBruta) * 100;
+    let statusAvaliacao = "Avaliação de Risco Aprovada";
     if (comprometimentoRenda > 30) {
       statusAvaliacao = "Reprovada (Renda Comprometida)";
     }
     
-    // --- Monta a resposta ---
     const resultado = {
-      prestacao: prestacao,
-      status: statusAvaliacao,
-      comprometimentoPercentual: comprometimentoRenda.toFixed(2),
-      // Adicionar outros campos fixos do exemplo se necessário
-      validade: `Validade de ${new Date().toLocaleDateString('pt-BR')} até ${new Date(new Date().setMonth(new Date().getMonth() + 6)).toLocaleDateString('pt-BR')}`
+      nomeProponente: proponente?.name || 'Não informado',
+      cpfProponente: proponente?.cpf || 'Não informado',
+      statusAvaliacao: statusAvaliacao,
+      valorImovel: Number(valorImovel),
+      valorFinanciamento: Number(valorFinanciamento),
+      prestacao: primeiraPrestacao,
+      prazo: Number(prazo),
+      sistemaAmortizacao: sistemaAmortizacao,
+      indexador: indexador,
+      rendaBruta: Number(rendaBruta),
+      validade: `${new Date().toLocaleDateString('pt-BR')} a ${new Date(new Date().setMonth(new Date().getMonth() + 6)).toLocaleDateString('pt-BR')}`,
+      parcelas: parcelas // <-- LISTA COMPLETA DE PARCELAS
     };
 
     res.status(200).json(resultado);
 
   } catch (error) {
-    console.error('[CALCULATOR] Erro ao simular financiamento:', error);
+    console.error('[CALCULATOR] Erro ao simular:', error);
     res.status(500).json({ error: 'Falha ao processar a simulação.' });
   }
 });
