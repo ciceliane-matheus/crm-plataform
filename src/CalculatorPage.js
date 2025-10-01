@@ -8,11 +8,8 @@ import { Search, Loader2, Download, X, List } from 'lucide-react';
 import Select from 'react-select';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { applyPlugin } from 'jspdf-autotable';
 import logoBase64 from './assets/logo.png';
 import CurrencyInput from 'react-currency-input-field';
-
-applyPlugin(jsPDF);
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -69,95 +66,103 @@ const CalculatorPage = ({ companyId, leads }) => {
     }
   };
   
-  // src/CalculatorPage.js -> SUBSTITUA A FUNÇÃO INTEIRA
+  const handleExportPDF = () => {
+  if (!resultado) {
+    toast.error("Você precisa calcular uma simulação antes de exportar o PDF.");
+    return;
+  }
 
-const handleExportPDF = () => {
-    if (!resultado) {
-      toast.error("Você precisa calcular uma simulação antes de exportar o PDF.");
-      return;
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+
+  // --- DADOS DA EMPRESA ---
+  const companyName = "Sua Construtora Inc.";
+  const companyContact = "contato@suaconstrutora.com | (99) 99999-9999";
+  const corporateColor = "#2c3e50";
+
+  // --- CABEÇALHO ---
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(corporateColor);
+  doc.text(companyName, pageWidth - margin, 18, { align: 'right' });
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor("#888888");
+  doc.text(companyContact, pageWidth - margin, 24, { align: 'right' });
+  doc.setDrawColor(corporateColor);
+  doc.line(margin, 30, pageWidth - margin, 30);
+
+  // --- TÍTULO ---
+  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(corporateColor);
+  doc.text("Simulação de Financiamento Imobiliário", pageWidth / 2, 45, { align: 'center' });
+
+  // --- DADOS DO PROPONENTE E SIMULAÇÃO ---
+  const proponente = [
+    { title: "Proponente:", value: resultado.nomeProponente || 'Não informado' },
+    { title: "CPF:", value: resultado.cpfProponente || 'Não informado' },
+    { title: "Status da Avaliação:", value: resultado.statusAvaliacao || '-' },
+  ];
+  const simulacao = [
+    { title: "Valor do Imóvel:", value: (resultado.valorImovel || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
+    { title: "Valor Financiado:", value: (resultado.valorFinanciamento || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
+    { title: "Primeira Parcela:", value: (resultado.prestacao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
+    { title: "Prazo:", value: `${resultado.prazo || 0} meses` },
+    { title: "Sistema de Amortização:", value: resultado.sistemaAmortizacao || '-' },
+    { title: "Validade da Proposta:", value: resultado.validade || '-' },
+  ];
+
+  // --- PRIMEIRA TABELA ---
+  const firstTable = autoTable(doc, {
+    startY: 55,
+    body: [...proponente, ...simulacao],
+    theme: 'plain',
+    styles: { fontSize: 10, cellPadding: 1.5 },
+    columnStyles: {
+      0: { fontStyle: 'bold', textColor: corporateColor },
+      1: { halign: 'right' }
     }
+  });
 
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 15;
+  // --- TABELA DE PARCELAS ---
+  const tableColumn = ["Mês", "Data Venc.", "Prestação", "Juros", "Amortização", "Saldo Devedor"];
+  const tableRows = (resultado.parcelas || []).map(p => [
+    p.mes,
+    p.dataVencimento ? new Date(p.dataVencimento).toLocaleDateString('pt-BR') : '-',
+    Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+    Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+    Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+    Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  ]);
 
-    const companyName = "Sua Construtora Inc.";
-    const companyContact = "contato@suaconstrutora.com | (99) 99999-9999";
-    const corporateColor = "#2c3e50"; 
+  autoTable(doc, {
+    head: [tableColumn],
+    body: tableRows,
+    startY: firstTable.lastAutoTable.finalY + 10, // <<< AGORA FUNCIONA
+    theme: 'grid',
+    headStyles: { fillColor: corporateColor, textColor: 255, fontStyle: 'bold' },
+    styles: { fontSize: 9 },
+    didDrawPage: (data) => {
+      // --- RODAPÉ ---
+      doc.setFontSize(8);
+      doc.setTextColor("#888888");
+      const pageStr = `Página ${doc.internal.getNumberOfPages()}`;
+      doc.text(pageStr, data.settings.margin.left, pageHeight - 10);
+      doc.text(
+        `Simulação gerada em: ${new Date().toLocaleDateString('pt-BR')}`,
+        pageWidth - data.settings.margin.right,
+        pageHeight - 10,
+        { align: 'right' }
+      );
+    }
+  });
 
-    // --- CABEÇALHO ---
-    doc.setFontSize(18);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(corporateColor);
-    doc.text(companyName, pageWidth - margin, 18, { align: 'right' });
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor("#888888");
-    doc.text(companyContact, pageWidth - margin, 24, { align: 'right' });
-    doc.setDrawColor(corporateColor);
-    doc.line(margin, 30, pageWidth - margin, 30); 
-
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(corporateColor);
-    doc.text("Simulação de Financiamento Imobiliário", pageWidth / 2, 45, { align: 'center' });
-
-    const proponente = [
-        { title: "Proponente:", value: resultado.nomeProponente || 'Não informado' },
-        { title: "CPF:", value: resultado.cpfProponente || 'Não informado' },
-        { title: "Status da Avaliação:", value: resultado.statusAvaliacao || '-' },
-    ];
-    const simulacao = [
-        { title: "Valor do Imóvel:", value: (resultado.valorImovel || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
-        { title: "Valor Financiado:", value: (resultado.valorFinanciamento || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
-        { title: "Primeira Parcela:", value: (resultado.prestacao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
-        { title: "Prazo:", value: `${resultado.prazo || 0} meses` },
-        { title: "Sistema de Amortização:", value: resultado.sistemaAmortizacao || '-' },
-        { title: "Validade da Proposta:", value: resultado.validade || '-' },
-    ];
-
-    // VOLTAMOS A USAR doc.autoTable(...)
-    doc.autoTable({
-        startY: 55,
-        body: [...proponente, ...simulacao],
-        theme: 'plain',
-        styles: { fontSize: 10, cellPadding: 1.5 },
-        columnStyles: {
-            0: { fontStyle: 'bold', textColor: corporateColor },
-            1: { halign: 'right' }
-        }
-    });
-
-    const tableColumn = ["Mês", "Data Venc.", "Prestação", "Juros", "Amortização", "Saldo Devedor"];
-    const tableRows = (resultado.parcelas || []).map(p => [
-        p.mes,
-        p.dataVencimento ? new Date(p.dataVencimento).toLocaleDateString('pt-BR') : '-',
-        Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-        Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-        Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-        Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-    ]);
-
-    // AGORA doc.previousAutoTable.finalY FUNCIONARÁ
-    doc.autoTable({
-        head: [tableColumn],
-        body: tableRows,
-        startY: doc.previousAutoTable.finalY + 10, 
-        theme: 'grid',
-        headStyles: { fillColor: corporateColor, textColor: 255, fontStyle: 'bold' },
-        styles: { fontSize: 9 },
-        didDrawPage: (data) => {
-            doc.setFontSize(8);
-            doc.setTextColor("#888888");
-            const pageStr = `Página ${doc.internal.getNumberOfPages()}`;
-            doc.text(pageStr, data.settings.margin.left, pageHeight - 10);
-            doc.text(`Simulação gerada em: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - data.settings.margin.right, pageHeight - 10, { align: 'right' });
-        }
-    });
-
-    doc.save(`Simulacao_${resultado.nomeProponente.replace(/\s+/g, "_")}.pdf`);
+  doc.save(`Simulacao_${(resultado.nomeProponente || "Cliente").replace(/\s+/g, "_")}.pdf`);
 };
+
 
   return (
     <div className="flex flex-col h-full">
