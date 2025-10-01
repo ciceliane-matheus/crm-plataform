@@ -72,6 +72,7 @@ const CalculatorPage = ({ companyId, leads }) => {
     let finalY = 0;
     doc.setFontSize(22);
     doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
+
     autoTable(doc, {
       startY: 30,
       head: [['DADOS DOS PROPONENTES']],
@@ -81,10 +82,11 @@ const CalculatorPage = ({ companyId, leads }) => {
       ],
       theme: 'striped',
       headStyles: { fillColor: [79, 70, 229] },
-      didDrawPage: (data) => { finalY = data.cursor.y; }
+      didDrawPage: (data) => { finalY = data.cursor.y; } // <-- Captura a posição correta
     });
+
     autoTable(doc, {
-      startY: finalY + 10,
+      startY: finalY + 10, // <-- Usa a posição correta
       head: [['DADOS DA AVALIAÇÃO']],
       body: [
         ['Resultado da Avaliação', resultado.statusAvaliacao || '—'],
@@ -99,6 +101,7 @@ const CalculatorPage = ({ companyId, leads }) => {
       theme: 'striped',
       headStyles: { fillColor: [79, 70, 229] },
     });
+    
     if (resultado.parcelas && resultado.parcelas.length > 0) {
       doc.addPage();
       doc.setFontSize(18);
