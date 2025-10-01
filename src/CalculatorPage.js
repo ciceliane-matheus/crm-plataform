@@ -78,12 +78,15 @@ const CalculatorPage = ({ companyId, leads }) => {
     const margin = 15;
 
     // --- DADOS DA EMPRESA (Personalize aqui) ---
+    // A importação da logo foi comentada para garantir que o erro não seja mais esse.
+    // Descomente apenas quando a exportação sem logo funcionar 100%.
+    // import logoBase64 from './assets/logo.png'; 
     const companyName = "Sua Construtora Inc.";
     const companyContact = "contato@suaconstrutora.com | (99) 99999-9999";
-    const corporateColor = "#2c3e50"; // Um azul escuro, por exemplo
+    const corporateColor = "#2c3e50"; 
 
     // --- CABEÇALHO ---
-    doc.addImage(logoBase64, 'PNG', margin, 10, 40, 15); // Adiciona a logo
+    // doc.addImage(logoBase64, 'PNG', margin, 10, 40, 15); 
     doc.setFontSize(18);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(corporateColor);
@@ -93,7 +96,7 @@ const CalculatorPage = ({ companyId, leads }) => {
     doc.setTextColor("#888888");
     doc.text(companyContact, pageWidth - margin, 24, { align: 'right' });
     doc.setDrawColor(corporateColor);
-    doc.line(margin, 30, pageWidth - margin, 30); // Linha divisória
+    doc.line(margin, 30, pageWidth - margin, 30); 
 
     // --- TÍTULO DO DOCUMENTO ---
     doc.setFontSize(16);
@@ -116,7 +119,8 @@ const CalculatorPage = ({ companyId, leads }) => {
         { title: "Validade da Proposta:", value: resultado.validade || '-' },
     ];
 
-    doc.autoTable({
+    // ALTERAÇÃO IMPORTANTE AQUI: A função agora é chamada como autoTable(doc, ...)
+    autoTable(doc, {
         startY: 55,
         body: [...proponente, ...simulacao],
         theme: 'plain',
@@ -138,15 +142,16 @@ const CalculatorPage = ({ companyId, leads }) => {
         Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
     ]);
 
+    // ALTERAÇÃO IMPORTANTE AQUI TAMBÉM
     autoTable(doc, {
         head: [tableColumn],
         body: tableRows,
-        startY: doc.previousAutoTable.finalY + 10,
+        startY: (doc).previousAutoTable.finalY + 10, // Acessa a propriedade através do objeto 'doc'
         theme: 'grid',
         headStyles: { fillColor: corporateColor, textColor: 255, fontStyle: 'bold' },
         styles: { fontSize: 9 },
         didDrawPage: (data) => {
-            // --- RODAPÉ (Adicionado em todas as páginas) ---
+            // --- RODAPÉ ---
             doc.setFontSize(8);
             doc.setTextColor("#888888");
             const pageStr = `Página ${doc.internal.getNumberOfPages()}`;
@@ -156,7 +161,7 @@ const CalculatorPage = ({ companyId, leads }) => {
     });
 
     doc.save(`Simulacao_${resultado.nomeProponente.replace(/\s+/g, "_")}.pdf`);
-  };
+};
 
   return (
     <div className="flex flex-col h-full">
