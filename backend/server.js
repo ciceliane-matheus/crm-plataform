@@ -801,6 +801,9 @@ app.post('/api/calculator/simulate', isAuthorized, async (req, res) => {
     let primeiraPrestacao = 0;
     const parcelas = [];
     let saldoDevedor = valorFinanciamento;
+    
+    // NOVO: Define a data de início para o cálculo das parcelas
+    const dataSimulacao = new Date();
 
     if (sistemaAmortizacao === 'PRICE') {
       const pmt = (valorFinanciamento * Math.pow(1 + taxaJurosMensal, prazo) * taxaJurosMensal) / (Math.pow(1 + taxaJurosMensal, prazo) - 1);
@@ -809,8 +812,13 @@ app.post('/api/calculator/simulate', isAuthorized, async (req, res) => {
         const juros = saldoDevedor * taxaJurosMensal;
         const amortizacao = pmt - juros;
         saldoDevedor -= amortizacao;
+        
+        // NOVO: Calcula a data de vencimento de cada parcela
+        const dataVencimento = new Date(dataSimulacao.getFullYear(), dataSimulacao.getMonth() + i, dataSimulacao.getDate());
+
         parcelas.push({
           mes: i,
+          dataVencimento: dataVencimento.toISOString(), // <-- Adiciona a data
           valor: pmt.toFixed(2),
           juros: juros.toFixed(2),
           amortizacao: amortizacao.toFixed(2),
@@ -826,8 +834,13 @@ app.post('/api/calculator/simulate', isAuthorized, async (req, res) => {
           primeiraPrestacao = pmt;
         }
         saldoDevedor -= amortizacao;
+
+        // NOVO: Calcula a data de vencimento de cada parcela
+        const dataVencimento = new Date(dataSimulacao.getFullYear(), dataSimulacao.getMonth() + i, dataSimulacao.getDate());
+        
         parcelas.push({
           mes: i,
+          dataVencimento: dataVencimento.toISOString(), // <-- Adiciona a data
           valor: pmt.toFixed(2),
           juros: juros.toFixed(2),
           amortizacao: amortizacao.toFixed(2),
@@ -854,7 +867,7 @@ app.post('/api/calculator/simulate', isAuthorized, async (req, res) => {
       indexador: indexador,
       rendaBruta: Number(rendaBruta),
       validade: `${new Date().toLocaleDateString('pt-BR')} a ${new Date(new Date().setMonth(new Date().getMonth() + 6)).toLocaleDateString('pt-BR')}`,
-      parcelas: parcelas // <-- LISTA COMPLETA DE PARCELAS
+      parcelas: parcelas
     };
 
     res.status(200).json(resultado);

@@ -8,6 +8,7 @@ import { Search, Loader2, Download, X, List } from 'lucide-react';
 import Select from 'react-select';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import logoBase64 from './assets/logo.png';
 import CurrencyInput from 'react-currency-input-field';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -66,75 +67,95 @@ const CalculatorPage = ({ companyId, leads }) => {
   };
   
   const handleExportPDF = () => {
-    // A verificação inicial é uma boa prática, mas a lógica abaixo a torna ainda mais robusta.
     if (!resultado) {
-        toast.error("Você precisa calcular uma simulação antes de exportar o PDF.");
-        console.warn('[PDF] Tentativa de exportação sem dados de resultado.');
-        return; // Impede a execução do restante da função.
+      toast.error("Você precisa calcular uma simulação antes de exportar o PDF.");
+      return;
     }
 
     const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 15;
 
-    // --- Cabeçalho ---
+    // --- DADOS DA EMPRESA (Personalize aqui) ---
+    const companyName = "Sua Construtora Inc.";
+    const companyContact = "contato@suaconstrutora.com | (99) 99999-9999";
+    const corporateColor = "#2c3e50"; // Um azul escuro, por exemplo
+
+    // --- CABEÇALHO ---
+    doc.addImage(logoBase64, 'PNG', margin, 10, 40, 15); // Adiciona a logo
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(corporateColor);
+    doc.text(companyName, pageWidth - margin, 18, { align: 'right' });
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor("#888888");
+    doc.text(companyContact, pageWidth - margin, 24, { align: 'right' });
+    doc.setDrawColor(corporateColor);
+    doc.line(margin, 30, pageWidth - margin, 30); // Linha divisória
+
+    // --- TÍTULO DO DOCUMENTO ---
     doc.setFontSize(16);
-    doc.text("Simulação de Financiamento", 14, 20);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(corporateColor);
+    doc.text("Simulação de Financiamento Imobiliário", pageWidth / 2, 45, { align: 'center' });
 
-    doc.setFontSize(12);
-    // LÓGICA CORRIGIDA: Adiciona '?' e um valor padrão '||' para cada variável.
-    const nomeProponente = resultado?.nomeProponente || 'Não informado';
-    const cpfProponente = resultado?.cpfProponente || 'Não informado';
-    const statusAvaliacao = resultado?.statusAvaliacao || 'Não disponível';
-    const valorImovel = resultado?.valorImovel || 0;
-    const valorFinanciamento = resultado?.valorFinanciamento || 0;
-    const prazo = resultado?.prazo || 0;
-    const sistema = resultado?.sistemaAmortizacao || '-';
-    const indexador = resultado?.indexador || '-';
-    const rendaBruta = resultado?.rendaBruta || 0;
-    const validade = resultado?.validade || '-';
+    // --- DADOS DO PROPONENTE E SIMULAÇÃO ---
+    const proponente = [
+        { title: "Proponente:", value: resultado.nomeProponente || 'Não informado' },
+        { title: "CPF:", value: resultado.cpfProponente || 'Não informado' },
+        { title: "Status da Avaliação:", value: resultado.statusAvaliacao || '-' },
+    ];
+    const simulacao = [
+        { title: "Valor do Imóvel:", value: (resultado.valorImovel || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
+        { title: "Valor Financiado:", value: (resultado.valorFinanciamento || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
+        { title: "Primeira Parcela:", value: (resultado.prestacao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
+        { title: "Prazo:", value: `${resultado.prazo || 0} meses` },
+        { title: "Sistema de Amortização:", value: resultado.sistemaAmortizacao || '-' },
+        { title: "Validade da Proposta:", value: resultado.validade || '-' },
+    ];
 
-    // Os dados da simulação agora serão incluídos corretamente.
-    doc.text(`Nome do Proponente: ${nomeProponente}`, 14, 30);
-    doc.text(`CPF do Proponente: ${cpfProponente}`, 14, 37);
-    doc.text(`Status Avaliação: ${statusAvaliacao}`, 14, 44);
-    doc.text(`Valor do Imóvel: R$ ${valorImovel.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 51);
-    doc.text(`Valor Financiamento: R$ ${valorFinanciamento.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 58);
-    doc.text(`Prazo: ${prazo} meses`, 14, 65);
-    doc.text(`Sistema: ${sistema}`, 14, 72);
-    doc.text(`Indexador: ${indexador}`, 14, 79);
-    doc.text(`Renda Bruta: R$ ${rendaBruta.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, 86);
-    doc.text(`Validade: ${validade}`, 14, 93);
-
-    // --- Tabela de Parcelas ---
-    const tableColumn = ["Mês", "Prestação", "Juros", "Amortização", "Saldo Devedor"];
-    const tableRows = [];
-
-    // Esta parte do seu código já estava segura com o '?'
-    if (resultado?.parcelas?.length > 0) {
-        resultado.parcelas.forEach((p) => {
-        tableRows.push([
-            p.mes || '-',
-            `R$ ${Number(p.valor)?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}`,
-            `R$ ${Number(p.juros)?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}`,
-            `R$ ${Number(p.amortizacao)?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}`,
-            `R$ ${Number(p.saldoDevedor)?.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) || '0,00'}`
-        ]);
-        });
-    } else {
-        tableRows.push(["-", "Sem parcelas disponíveis", "-", "-", "-"]);
-    }
-
-    // --- AutoTable com quebra de página automática ---
-    autoTable(doc, { // A forma de chamar o autoTable foi levemente ajustada para a sintaxe mais comum
-        head: [tableColumn],
-        body: tableRows,
-        startY: 100,
-        theme: 'grid',
-        headStyles: { fillColor: [41, 128, 185], textColor: 255 },
-        styles: { fontSize: 10 },
+    doc.autoTable({
+        startY: 55,
+        body: [...proponente, ...simulacao],
+        theme: 'plain',
+        styles: { fontSize: 10, cellPadding: 1.5 },
+        columnStyles: {
+            0: { fontStyle: 'bold', textColor: corporateColor },
+            1: { halign: 'right' }
+        }
     });
 
-    console.log(`[PDF] Gerando PDF com ${tableRows.length} linhas de parcelas.`);
-    doc.save(`Simulacao_${nomeProponente.replace(/\s+/g, "_")}.pdf`);
+    // --- TABELA DE PARCELAS ---
+    const tableColumn = ["Mês", "Data Venc.", "Prestação", "Juros", "Amortização", "Saldo Devedor"];
+    const tableRows = (resultado.parcelas || []).map(p => [
+        p.mes,
+        p.dataVencimento ? new Date(p.dataVencimento).toLocaleDateString('pt-BR') : '-',
+        Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+        Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+        Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+        Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    ]);
+
+    autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: doc.previousAutoTable.finalY + 10,
+        theme: 'grid',
+        headStyles: { fillColor: corporateColor, textColor: 255, fontStyle: 'bold' },
+        styles: { fontSize: 9 },
+        didDrawPage: (data) => {
+            // --- RODAPÉ (Adicionado em todas as páginas) ---
+            doc.setFontSize(8);
+            doc.setTextColor("#888888");
+            const pageStr = `Página ${doc.internal.getNumberOfPages()}`;
+            doc.text(pageStr, data.settings.margin.left, pageHeight - 10);
+            doc.text(`Simulação gerada em: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - data.settings.margin.right, pageHeight - 10, { align: 'right' });
+        }
+    });
+
+    doc.save(`Simulacao_${resultado.nomeProponente.replace(/\s+/g, "_")}.pdf`);
   };
 
   return (
@@ -218,26 +239,32 @@ const CalculatorPage = ({ companyId, leads }) => {
               <button onClick={() => setIsParcelasModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
             </div>
             <div className="overflow-auto flex-grow">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-100 sticky top-0"><tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Mês</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Prestação</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Juros</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Amortização</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Saldo Devedor</th>
-                </tr></thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {resultado.parcelas.map(p => (
-                    <tr key={p.mes}>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm">{p.mes}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm font-semibold">{Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm">{Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm">{Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm">{Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-100 sticky top-0"><tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Mês</th>
+                    {/* NOVO: Cabeçalho da coluna de data */}
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Data Venc.</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Prestação</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Juros</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Amortização</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Saldo Devedor</th>
+                    </tr></thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                    {resultado.parcelas.map(p => (
+                        <tr key={p.mes}>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm">{p.mes}</td>
+                        {/* NOVO: Célula que exibe a data formatada */}
+                        <td className="px-4 py-2 whitespace-nowrap text-sm">
+                            {p.dataVencimento ? new Date(p.dataVencimento).toLocaleDateString('pt-BR') : '-'}
+                        </td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm font-semibold">{Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm">{Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm">{Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm">{Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        </tr>
+                    ))}
+                    </tbody>
+                </table>
             </div>
             <div className="p-4 border-t flex justify-end">
               <button onClick={() => setIsParcelasModalOpen(false)} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Fechar</button>
