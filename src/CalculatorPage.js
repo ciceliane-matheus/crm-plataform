@@ -69,11 +69,9 @@ const CalculatorPage = ({ companyId, leads }) => {
       return;
     }
     const doc = new jsPDF();
-
+    let finalY = 0;
     doc.setFontSize(22);
     doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
-
-    // Tabela de Proponente
     autoTable(doc, {
       startY: 30,
       head: [['DADOS DOS PROPONENTES']],
@@ -83,31 +81,24 @@ const CalculatorPage = ({ companyId, leads }) => {
       ],
       theme: 'striped',
       headStyles: { fillColor: [79, 70, 229] },
+      didDrawPage: (data) => { finalY = data.cursor.y; }
     });
-    
-    // Tabela de Avaliação (LÓGICA DE ESPELHAMENTO)
-    const corpoTabelaAvaliacao = Object.entries(resultado)
-      .filter(([key]) => !['parcelas', 'nomeProponente', 'cpfProponente'].includes(key)) // Exclui campos já usados ou da outra tabela
-      .map(([key, value]) => {
-        let displayValue = value;
-        // Formata os valores da mesma forma que na UI
-        if (typeof value === 'number' && ['valorImovel', 'valorFinanciamento', 'prestacao', 'rendaBruta'].includes(key)) {
-          displayValue = value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        }
-        // Transforma a chave para um texto amigável
-        const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-        return [label, displayValue];
-      });
-
     autoTable(doc, {
-      startY: doc.lastAutoTable.finalY + 10,
+      startY: finalY + 10,
       head: [['DADOS DA AVALIAÇÃO']],
-      body: corpoTabelaAvaliacao,
+      body: [
+        ['Resultado da Avaliação', resultado.statusAvaliacao || '—'],
+        ['Validade', resultado.validade || '—'],
+        ['Valor do Imóvel', (resultado.valorImovel || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+        ['Valor Financiamento', (resultado.valorFinanciamento || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+        ['(Primeira) Prestação', (resultado.prestacao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+        ['Prazo (Meses)', resultado.prazo || '—'],
+        ['Sistema de Amortização', resultado.sistemaAmortizacao || '—'],
+        ['Renda Bruta', (resultado.rendaBruta || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+      ],
       theme: 'striped',
       headStyles: { fillColor: [79, 70, 229] },
     });
-    
-    // Tabela de Parcelas (continua igual)
     if (resultado.parcelas && resultado.parcelas.length > 0) {
       doc.addPage();
       doc.setFontSize(18);
@@ -116,20 +107,18 @@ const CalculatorPage = ({ companyId, leads }) => {
         startY: 30,
         head: [['Mês', 'Prestação', 'Juros', 'Amortização', 'Saldo Devedor']],
         body: resultado.parcelas.map(p => [
-            p.mes,
-            Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-            Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-            Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-            Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          p.mes,
+          Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
         ]),
         theme: 'grid',
       });
     }
-    
     const nomeArquivo = resultado.nomeProponente && resultado.nomeProponente !== 'Não informado'
       ? resultado.nomeProponente.replace(/ /g, '_')
       : 'Simulacao';
-
     doc.save(`Avaliacao_Risco_${nomeArquivo}.pdf`);
   };
 

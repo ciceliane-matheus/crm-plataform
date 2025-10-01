@@ -6,7 +6,6 @@ const { db, auth, storage } = require('./firebaseAdmin');
 
 // Carrega as variáveis de ambiente do arquivo .env
 require('dotenv').config();
-
 const app = express();
 const port = 3001;
 
