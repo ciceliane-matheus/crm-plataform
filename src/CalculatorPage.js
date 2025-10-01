@@ -1,3 +1,5 @@
+// src/CalculatorPage.js (VERSÃO FINAL, CORRIGIDA E COMPLETA)
+
 import { useState, useEffect } from 'react';
 import { auth } from './firebaseConfig';
 import axios from 'axios';
@@ -65,77 +67,62 @@ const CalculatorPage = ({ companyId, leads }) => {
   
   const handleExportPDF = () => {
     if (!resultado) {
-        toast.error('Nenhum resultado para exportar.');
-        return;
+      toast.error('Nenhum resultado para exportar.');
+      return;
     }
-
     const doc = new jsPDF();
     let finalY = 0;
-
     doc.setFontSize(22);
     doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
-
-    // 🔹 Inclui os dados do lead (ou do form, se não tiver lead)
-    const nomeProponente = selectedLead?.lead?.name || resultado.nomeProponente || "Não informado";
-    const cpfProponente = selectedLead?.lead?.cpf || resultado.cpfProponente || "Não informado";
-
     autoTable(doc, {
-        startY: 30,
-        head: [['DADOS DOS PROPONENTES']],
-        body: [
-        ['Cliente', nomeProponente],
-        ['CPF Cliente', cpfProponente],
-        ['Telefone', selectedLead?.lead?.phone || "—"]
-        ],
-        theme: 'striped',
-        headStyles: { fillColor: [79, 70, 229] },
-        didDrawPage: (data) => { finalY = data.cursor.y; }
+      startY: 30,
+      head: [['DADOS DOS PROPONENTES']],
+      body: [
+        ['Cliente', resultado.nomeProponente || '—'],
+        ['CPF Cliente', resultado.cpfProponente || '—'],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [79, 70, 229] },
+      didDrawPage: (data) => { finalY = data.cursor.y; }
     });
-
-    // 🔹 Junta dados do resultado + estados do formulário
     autoTable(doc, {
-        startY: finalY + 10,
-        head: [['DADOS DA AVALIAÇÃO']],
-        body: [
+      startY: finalY + 10,
+      head: [['DADOS DA AVALIAÇÃO']],
+      body: [
         ['Resultado da Avaliação', resultado.statusAvaliacao || '—'],
         ['Validade', resultado.validade || '—'],
-        ['Valor do Imóvel', (valorImovel || 0).toString()],
-        ['Valor Financiamento', (valorFinanciamento || 0).toString()],
+        ['Valor do Imóvel', (resultado.valorImovel || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+        ['Valor Financiamento', (resultado.valorFinanciamento || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
         ['(Primeira) Prestação', (resultado.prestacao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
-        ['Prazo (Meses)', prazo || resultado.prazo || '—'],
-        ['Sistema de Amortização', sistemaAmortizacao || resultado.sistemaAmortizacao || '—'],
-        ['Indexador', indexador || resultado.indexador || '—'],
-        ['Renda Bruta', (rendaBruta || 0).toString()],
-        ],
-        theme: 'striped',
-        headStyles: { fillColor: [79, 70, 229] },
+        ['Prazo (Meses)', resultado.prazo || '—'],
+        ['Sistema de Amortização', resultado.sistemaAmortizacao || '—'],
+        ['Renda Bruta', (resultado.rendaBruta || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [79, 70, 229] },
     });
-
     if (resultado.parcelas && resultado.parcelas.length > 0) {
-        doc.addPage();
-        doc.setFontSize(18);
-        doc.text("Detalhamento das Parcelas", 105, 20, { align: 'center' });
-
-        autoTable(doc, {
+      doc.addPage();
+      doc.setFontSize(18);
+      doc.text("Detalhamento das Parcelas", 105, 20, { align: 'center' });
+      autoTable(doc, {
         startY: 30,
         head: [['Mês', 'Prestação', 'Juros', 'Amortização', 'Saldo Devedor']],
         body: resultado.parcelas.map(p => [
-            p.mes,
-            Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-            Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-            Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-            Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          p.mes,
+          Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+          Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
         ]),
         theme: 'grid',
-        });
+      });
     }
-
-    const nomeArquivo = nomeProponente !== "Não informado"
-        ? nomeProponente.replace(/ /g, '_')
-        : 'Simulacao';
-
+    const nomeArquivo = resultado.nomeProponente && resultado.nomeProponente !== 'Não informado'
+      ? resultado.nomeProponente.replace(/ /g, '_')
+      : 'Simulacao';
     doc.save(`Avaliacao_Risco_${nomeArquivo}.pdf`);
-    };
+  };
 
   return (
     <div className="flex flex-col h-full">
