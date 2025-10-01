@@ -8,8 +8,11 @@ import { Search, Loader2, Download, X, List } from 'lucide-react';
 import Select from 'react-select';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { applyPlugin } from 'jspdf-autotable';
 import logoBase64 from './assets/logo.png';
 import CurrencyInput from 'react-currency-input-field';
+
+applyPlugin(jsPDF);
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -66,7 +69,9 @@ const CalculatorPage = ({ companyId, leads }) => {
     }
   };
   
-  const handleExportPDF = () => {
+  // src/CalculatorPage.js -> SUBSTITUA A FUNÇÃO INTEIRA
+
+const handleExportPDF = () => {
     if (!resultado) {
       toast.error("Você precisa calcular uma simulação antes de exportar o PDF.");
       return;
@@ -77,16 +82,11 @@ const CalculatorPage = ({ companyId, leads }) => {
     const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 15;
 
-    // --- DADOS DA EMPRESA (Personalize aqui) ---
-    // A importação da logo foi comentada para garantir que o erro não seja mais esse.
-    // Descomente apenas quando a exportação sem logo funcionar 100%.
-    // import logoBase64 from './assets/logo.png'; 
     const companyName = "Sua Construtora Inc.";
     const companyContact = "contato@suaconstrutora.com | (99) 99999-9999";
     const corporateColor = "#2c3e50"; 
 
     // --- CABEÇALHO ---
-    // doc.addImage(logoBase64, 'PNG', margin, 10, 40, 15); 
     doc.setFontSize(18);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(corporateColor);
@@ -98,13 +98,11 @@ const CalculatorPage = ({ companyId, leads }) => {
     doc.setDrawColor(corporateColor);
     doc.line(margin, 30, pageWidth - margin, 30); 
 
-    // --- TÍTULO DO DOCUMENTO ---
     doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(corporateColor);
     doc.text("Simulação de Financiamento Imobiliário", pageWidth / 2, 45, { align: 'center' });
 
-    // --- DADOS DO PROPONENTE E SIMULAÇÃO ---
     const proponente = [
         { title: "Proponente:", value: resultado.nomeProponente || 'Não informado' },
         { title: "CPF:", value: resultado.cpfProponente || 'Não informado' },
@@ -119,8 +117,8 @@ const CalculatorPage = ({ companyId, leads }) => {
         { title: "Validade da Proposta:", value: resultado.validade || '-' },
     ];
 
-    // ALTERAÇÃO IMPORTANTE AQUI: A função agora é chamada como autoTable(doc, ...)
-    autoTable(doc, {
+    // VOLTAMOS A USAR doc.autoTable(...)
+    doc.autoTable({
         startY: 55,
         body: [...proponente, ...simulacao],
         theme: 'plain',
@@ -131,7 +129,6 @@ const CalculatorPage = ({ companyId, leads }) => {
         }
     });
 
-    // --- TABELA DE PARCELAS ---
     const tableColumn = ["Mês", "Data Venc.", "Prestação", "Juros", "Amortização", "Saldo Devedor"];
     const tableRows = (resultado.parcelas || []).map(p => [
         p.mes,
@@ -142,16 +139,15 @@ const CalculatorPage = ({ companyId, leads }) => {
         Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
     ]);
 
-    // ALTERAÇÃO IMPORTANTE AQUI TAMBÉM
-    autoTable(doc, {
+    // AGORA doc.previousAutoTable.finalY FUNCIONARÁ
+    doc.autoTable({
         head: [tableColumn],
         body: tableRows,
-        startY: (doc).previousAutoTable.finalY + 10, // Acessa a propriedade através do objeto 'doc'
+        startY: doc.previousAutoTable.finalY + 10, 
         theme: 'grid',
         headStyles: { fillColor: corporateColor, textColor: 255, fontStyle: 'bold' },
         styles: { fontSize: 9 },
         didDrawPage: (data) => {
-            // --- RODAPÉ ---
             doc.setFontSize(8);
             doc.setTextColor("#888888");
             const pageStr = `Página ${doc.internal.getNumberOfPages()}`;
