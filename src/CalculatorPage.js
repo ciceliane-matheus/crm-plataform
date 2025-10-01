@@ -65,57 +65,54 @@ const CalculatorPage = ({ companyId, leads }) => {
   
   const handleExportPDF = () => {
     if (!resultado) {
-        toast.error('Nenhum resultado para exportar.');
-        return;
+      toast.error('Nenhum resultado para exportar.');
+      return;
     }
-
     const doc = new jsPDF();
-    let finalY = 0;
 
-    // === TÍTULO ===
     doc.setFontSize(22);
     doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
 
-    // === PROPONENTE ===
+    // Tabela de Proponente
     autoTable(doc, {
-        startY: 30,
-        head: [['DADOS DOS PROPONENTES']],
-        body: [
-        ['Cliente', resultado.nomeProponente || resultado.NomeProponente || selectedLead?.lead?.name || '—'],
-        ['CPF Cliente', resultado.cpfProponente || resultado.CpfProponente || selectedLead?.lead?.cpf || '—'],
-        ],
-        theme: 'striped',
-        headStyles: { fillColor: [79, 70, 229] },
-        didDrawPage: (data) => { finalY = data.cursor.y; }
+      startY: 30,
+      head: [['DADOS DOS PROPONENTES']],
+      body: [
+        ['Cliente', resultado.nomeProponente || '—'],
+        ['CPF Cliente', resultado.cpfProponente || '—'],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [79, 70, 229] },
     });
-
-    // === AVALIAÇÃO (dinâmico, igual na tela) ===
-    const avaliacaoBody = Object.entries(resultado)
-        .filter(([key]) => key !== 'parcelas')
-        .map(([key, value]) => {
+    
+    // Tabela de Avaliação (LÓGICA DE ESPELHAMENTO)
+    const corpoTabelaAvaliacao = Object.entries(resultado)
+      .filter(([key]) => !['parcelas', 'nomeProponente', 'cpfProponente'].includes(key)) // Exclui campos já usados ou da outra tabela
+      .map(([key, value]) => {
         let displayValue = value;
+        // Formata os valores da mesma forma que na UI
         if (typeof value === 'number' && ['valorImovel', 'valorFinanciamento', 'prestacao', 'rendaBruta'].includes(key)) {
-            displayValue = value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          displayValue = value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
         }
+        // Transforma a chave para um texto amigável
         const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-        return [label, displayValue || '—'];
-        });
+        return [label, displayValue];
+      });
 
     autoTable(doc, {
-        startY: finalY + 10,
-        head: [['DADOS DA AVALIAÇÃO']],
-        body: avaliacaoBody,
-        theme: 'striped',
-        headStyles: { fillColor: [79, 70, 229] },
+      startY: doc.lastAutoTable.finalY + 10,
+      head: [['DADOS DA AVALIAÇÃO']],
+      body: corpoTabelaAvaliacao,
+      theme: 'striped',
+      headStyles: { fillColor: [79, 70, 229] },
     });
-
-    // === PARCELAS ===
+    
+    // Tabela de Parcelas (continua igual)
     if (resultado.parcelas && resultado.parcelas.length > 0) {
-        doc.addPage();
-        doc.setFontSize(18);
-        doc.text("Detalhamento das Parcelas", 105, 20, { align: 'center' });
-
-        autoTable(doc, {
+      doc.addPage();
+      doc.setFontSize(18);
+      doc.text("Detalhamento das Parcelas", 105, 20, { align: 'center' });
+      autoTable(doc, {
         startY: 30,
         head: [['Mês', 'Prestação', 'Juros', 'Amortização', 'Saldo Devedor']],
         body: resultado.parcelas.map(p => [
@@ -126,13 +123,15 @@ const CalculatorPage = ({ companyId, leads }) => {
             Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
         ]),
         theme: 'grid',
-        });
+      });
     }
+    
+    const nomeArquivo = resultado.nomeProponente && resultado.nomeProponente !== 'Não informado'
+      ? resultado.nomeProponente.replace(/ /g, '_')
+      : 'Simulacao';
 
-    // === NOME DO ARQUIVO ===
-    const nomeArquivo = resultado.nomeProponente || selectedLead?.lead?.name || 'Simulacao';
-    doc.save(`Avaliacao_Risco_${nomeArquivo.replace(/ /g, '_')}.pdf`);
-    };
+    doc.save(`Avaliacao_Risco_${nomeArquivo}.pdf`);
+  };
 
   return (
     <div className="flex flex-col h-full">
