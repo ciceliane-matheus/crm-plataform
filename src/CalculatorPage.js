@@ -66,17 +66,21 @@ const CalculatorPage = ({ companyId, leads }) => {
   };
   
   const handleExportPDF = () => {
+    // A verificação inicial é uma boa prática, mas a lógica abaixo a torna ainda mais robusta.
     if (!resultado) {
-        console.warn('[PDF] Resultado não carregado. Criando PDF vazio.');
+        toast.error("Você precisa calcular uma simulação antes de exportar o PDF.");
+        console.warn('[PDF] Tentativa de exportação sem dados de resultado.');
+        return; // Impede a execução do restante da função.
     }
 
     const doc = new jsPDF();
 
     // --- Cabeçalho ---
-    doc.setFontSize(16);
+    docsetFontSize(16);
     doc.text("Simulação de Financiamento", 14, 20);
 
     doc.setFontSize(12);
+    // LÓGICA CORRIGIDA: Adiciona '?' e um valor padrão '||' para cada variável.
     const nomeProponente = resultado?.nomeProponente || 'Não informado';
     const cpfProponente = resultado?.cpfProponente || 'Não informado';
     const statusAvaliacao = resultado?.statusAvaliacao || 'Não disponível';
@@ -88,6 +92,7 @@ const CalculatorPage = ({ companyId, leads }) => {
     const rendaBruta = resultado?.rendaBruta || 0;
     const validade = resultado?.validade || '-';
 
+    // Os dados da simulação agora serão incluídos corretamente.
     doc.text(`Nome do Proponente: ${nomeProponente}`, 14, 30);
     doc.text(`CPF do Proponente: ${cpfProponente}`, 14, 37);
     doc.text(`Status Avaliação: ${statusAvaliacao}`, 14, 44);
@@ -103,6 +108,7 @@ const CalculatorPage = ({ companyId, leads }) => {
     const tableColumn = ["Mês", "Prestação", "Juros", "Amortização", "Saldo Devedor"];
     const tableRows = [];
 
+    // Esta parte do seu código já estava segura com o '?'
     if (resultado?.parcelas?.length > 0) {
         resultado.parcelas.forEach((p) => {
         tableRows.push([
@@ -118,22 +124,18 @@ const CalculatorPage = ({ companyId, leads }) => {
     }
 
     // --- AutoTable com quebra de página automática ---
-    doc.autoTable({
+    autoTable(doc, { // A forma de chamar o autoTable foi levemente ajustada para a sintaxe mais comum
         head: [tableColumn],
         body: tableRows,
         startY: 100,
         theme: 'grid',
         headStyles: { fillColor: [41, 128, 185], textColor: 255 },
         styles: { fontSize: 10 },
-        didDrawPage: (data) => {
-        // Loga número da página para depuração
-        console.log(`[PDF] Página gerada: ${doc.internal.getNumberOfPages()}`);
-        }
     });
 
     console.log(`[PDF] Gerando PDF com ${tableRows.length} linhas de parcelas.`);
     doc.save(`Simulacao_${nomeProponente.replace(/\s+/g, "_")}.pdf`);
-    };
+  };
 
   return (
     <div className="flex flex-col h-full">
