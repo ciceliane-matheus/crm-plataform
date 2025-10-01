@@ -72,10 +72,11 @@ const CalculatorPage = ({ companyId, leads }) => {
     const doc = new jsPDF();
     let finalY = 0;
 
+    // === TÍTULO ===
     doc.setFontSize(22);
     doc.text("Avaliação de Risco", 105, 20, { align: 'center' });
 
-    // === DADOS DOS PROPONENTES ===
+    // === PROPONENTE ===
     autoTable(doc, {
         startY: 30,
         head: [['DADOS DOS PROPONENTES']],
@@ -88,7 +89,7 @@ const CalculatorPage = ({ companyId, leads }) => {
         didDrawPage: (data) => { finalY = data.cursor.y; }
     });
 
-    // === DADOS DA AVALIAÇÃO (dinâmico, igual à tela) ===
+    // === AVALIAÇÃO (dinâmico, igual na tela) ===
     const avaliacaoBody = Object.entries(resultado)
         .filter(([key]) => key !== 'parcelas')
         .map(([key, value]) => {
@@ -108,11 +109,12 @@ const CalculatorPage = ({ companyId, leads }) => {
         headStyles: { fillColor: [79, 70, 229] },
     });
 
-    // === DETALHAMENTO DAS PARCELAS ===
+    // === PARCELAS ===
     if (resultado.parcelas && resultado.parcelas.length > 0) {
         doc.addPage();
         doc.setFontSize(18);
         doc.text("Detalhamento das Parcelas", 105, 20, { align: 'center' });
+
         autoTable(doc, {
         startY: 30,
         head: [['Mês', 'Prestação', 'Juros', 'Amortização', 'Saldo Devedor']],
@@ -127,7 +129,7 @@ const CalculatorPage = ({ companyId, leads }) => {
         });
     }
 
-    // === SALVAR PDF ===
+    // === NOME DO ARQUIVO ===
     const nomeArquivo = resultado.nomeProponente || selectedLead?.lead?.name || 'Simulacao';
     doc.save(`Avaliacao_Risco_${nomeArquivo.replace(/ /g, '_')}.pdf`);
     };
