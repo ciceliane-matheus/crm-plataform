@@ -510,18 +510,23 @@ const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 
 app.post('/api/evolution/send-message', isAuthorized, async (req, res) => {
-  const { recipientId, message, companyId, leadId } = req.body; // Adicionado leadId para salvar a mensagem
+  const { recipientId, message, companyId, leadId } = req.body;
   if (!recipientId || !message || !companyId || !leadId) {
     return res.status(400).json({ error: 'recipientId, message, companyId e leadId são obrigatórios.' });
   }
 
-  // Garante que o número está no formato DDI+DDD+NUMERO (ex: 5511999998888)
-  const formattedRecipient = recipientId.replace(/\D/g, '');
+  // LÓGICA DE FORMATAÇÃO ROBUSTA DO NÚMERO
+  let formattedRecipient = recipientId.replace(/\D/g, ''); // Remove todos os não-dígitos
+  if (!formattedRecipient.startsWith('55')) {
+    formattedRecipient = `55${formattedRecipient}`; // Garante o código do país
+  }
+  // Adiciona o sufixo @c.us, que é o formato padrão para contatos individuais
+  const recipientJid = `${formattedRecipient}@c.us`;
 
   try {
-    const url = `${EVOLUTION_API_URL}/message/sendText/CRM_V1`; // Usando o nome da sua instância: CRM_V1
+    const url = `${EVOLUTION_API_URL}/message/sendText/${process.env.EVOLUTION_INSTANCE_NAME || 'CRM_V1'}`;
     const data = {
-      number: formattedRecipient,
+      number: recipientJid, // <-- USA O NÚMERO FORMATADO
       options: {
         delay: 1200,
         presence: "composing"
@@ -536,10 +541,9 @@ app.post('/api/evolution/send-message', isAuthorized, async (req, res) => {
       'Content-Type': 'application/json'
     };
 
-    console.log(`[EVOLUTION SEND] Enviando para: ${url}`);
+    console.log(`[EVOLUTION SEND] Enviando para: ${recipientJid}`);
     await axios.post(url, data, { headers });
 
-    // Salva a mensagem enviada no nosso banco de dados (Firestore)
     const messageRef = db.collection('companies').doc(companyId).collection('leads').doc(leadId).collection('messages');
     await messageRef.add({
       from: 'me',
@@ -547,7 +551,7 @@ app.post('/api/evolution/send-message', isAuthorized, async (req, res) => {
       timestamp: new Date(),
     });
 
-    console.log(`[EVOLUTION SEND] Mensagem para ${formattedRecipient} enviada com sucesso e salva no Firestore.`);
+    console.log(`[EVOLUTION SEND] Mensagem para ${recipientJid} enviada e salva com sucesso.`);
     res.status(200).json({ success: true });
 
   } catch (error) {
