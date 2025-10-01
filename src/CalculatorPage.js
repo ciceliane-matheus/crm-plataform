@@ -67,102 +67,106 @@ const CalculatorPage = ({ companyId, leads }) => {
   };
   
   const handleExportPDF = () => {
-  if (!resultado) {
-    toast.error("Você precisa calcular uma simulação antes de exportar o PDF.");
+  if (!resultado || !resultado.parcelas || resultado.parcelas.length === 0) {
+    alert("Nenhum resultado disponível para exportar.");
     return;
   }
 
   const doc = new jsPDF();
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 15;
 
-  // --- DADOS DA EMPRESA ---
-  const companyName = "Sua Construtora Inc.";
-  const companyContact = "contato@suaconstrutora.com | (99) 99999-9999";
-  const corporateColor = "#2c3e50";
-
-  // --- CABEÇALHO ---
+  // HEADER
+  doc.addImage(logoBase64, "PNG", 160, 10, 35, 20);
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(corporateColor);
-  doc.text(companyName, pageWidth - margin, 18, { align: 'right' });
+  doc.text("Relatório de Simulação de Financiamento", 14, 20);
+
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.setTextColor("#888888");
-  doc.text(companyContact, pageWidth - margin, 24, { align: 'right' });
-  doc.setDrawColor(corporateColor);
-  doc.line(margin, 30, pageWidth - margin, 30);
+  doc.text(
+    `Gerado em: ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}`,
+    14,
+    28
+  );
+  doc.setDrawColor(150);
+  doc.line(14, 32, 196, 32);
 
-  // --- TÍTULO ---
-  doc.setFontSize(16);
+  // RESUMO EXECUTIVO
+  let y = 40;
+  doc.setFontSize(14);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(corporateColor);
-  doc.text("Simulação de Financiamento Imobiliário", pageWidth / 2, 45, { align: 'center' });
+  doc.text("Resumo da Avaliação", 14, y);
 
-  // --- DADOS DO PROPONENTE E SIMULAÇÃO ---
-  const proponente = [
-    { title: "Proponente:", value: resultado.nomeProponente || 'Não informado' },
-    { title: "CPF:", value: resultado.cpfProponente || 'Não informado' },
-    { title: "Status da Avaliação:", value: resultado.statusAvaliacao || '-' },
-  ];
-  const simulacao = [
-    { title: "Valor do Imóvel:", value: (resultado.valorImovel || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
-    { title: "Valor Financiado:", value: (resultado.valorFinanciamento || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
-    { title: "Primeira Parcela:", value: (resultado.prestacao || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
-    { title: "Prazo:", value: `${resultado.prazo || 0} meses` },
-    { title: "Sistema de Amortização:", value: resultado.sistemaAmortizacao || '-' },
-    { title: "Validade da Proposta:", value: resultado.validade || '-' },
+  y += 8;
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+
+  const resumo = [
+    ["Nome Proponente:", resultado.nomeProponente || "-"],
+    ["CPF Proponente:", resultado.cpfProponente || "-"],
+    ["Status Avaliação:", resultado.statusAvaliacao || "-"],
+    ["Valor do Imóvel:", Number(resultado.valorImovel || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })],
+    ["Valor do Financiamento:", Number(resultado.valorFinanciamento || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })],
+    ["Prestação:", Number(resultado.prestacao || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })],
+    ["Prazo (meses):", resultado.prazo || "-"],
+    ["Sistema de Amortização:", resultado.sistemaAmortizacao || "-"],
+    ["Indexador:", resultado.indexador || "-"],
+    ["Renda Bruta Mensal:", Number(resultado.rendaBruta || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })],
+    ["Validade:", resultado.validade || "-"],
   ];
 
-  // --- PRIMEIRA TABELA ---
-  const firstTable = autoTable(doc, {
-    startY: 55,
-    body: [...proponente, ...simulacao],
-    theme: 'plain',
-    styles: { fontSize: 10, cellPadding: 1.5 },
-    columnStyles: {
-      0: { fontStyle: 'bold', textColor: corporateColor },
-      1: { halign: 'right' }
-    }
+  resumo.forEach(item => {
+    doc.text(`${item[0]} ${item[1]}`, 14, y);
+    y += 6;
   });
 
-  // --- TABELA DE PARCELAS ---
-  const tableColumn = ["Mês", "Data Venc.", "Prestação", "Juros", "Amortização", "Saldo Devedor"];
-  const tableRows = (resultado.parcelas || []).map(p => [
+  // TABELA DE PARCELAS
+  y += 4;
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("Tabela de Parcelas", 14, y);
+
+  const headers = ["Mês", "Vencimento", "Valor", "Juros", "Amortização", "Saldo Devedor"];
+
+  const rows = resultado.parcelas.map(p => [
     p.mes,
-    p.dataVencimento ? new Date(p.dataVencimento).toLocaleDateString('pt-BR') : '-',
-    Number(p.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-    Number(p.juros).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-    Number(p.amortizacao).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-    Number(p.saldoDevedor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    new Date(p.dataVencimento).toLocaleDateString("pt-BR"),
+    Number(p.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+    Number(p.juros).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+    Number(p.amortizacao).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+    Number(p.saldoDevedor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
   ]);
 
   autoTable(doc, {
-    head: [tableColumn],
-    body: tableRows,
-    startY: firstTable.lastAutoTable.finalY + 10, // <<< AGORA FUNCIONA
-    theme: 'grid',
-    headStyles: { fillColor: corporateColor, textColor: 255, fontStyle: 'bold' },
-    styles: { fontSize: 9 },
-    didDrawPage: (data) => {
-      // --- RODAPÉ ---
-      doc.setFontSize(8);
-      doc.setTextColor("#888888");
-      const pageStr = `Página ${doc.internal.getNumberOfPages()}`;
-      doc.text(pageStr, data.settings.margin.left, pageHeight - 10);
-      doc.text(
-        `Simulação gerada em: ${new Date().toLocaleDateString('pt-BR')}`,
-        pageWidth - data.settings.margin.right,
-        pageHeight - 10,
-        { align: 'right' }
-      );
-    }
+    head: [headers],
+    body: rows,
+    startY: y + 6,
+    styles: { fontSize: 9, halign: "center" },
+    headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [245, 245, 245] },
   });
 
-  doc.save(`Simulacao_${(resultado.nomeProponente || "Cliente").replace(/\s+/g, "_")}.pdf`);
-};
+  // RODAPÉ em todas as páginas
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
 
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // logo menor no rodapé
+    doc.addImage(logoBase64, "PNG", pageWidth - 40, pageHeight - 18, 25, 12);
+
+    // texto rodapé
+    doc.setFontSize(9);
+    doc.setTextColor(150);
+    doc.text(`Página ${i} de ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: "center" });
+    doc.text("Relatório gerado automaticamente pelo sistema.", 14, pageHeight - 10);
+  }
+
+  // Salva o arquivo com nome do cliente
+  const nomeArquivo = `simulacao_${resultado.nomeProponente?.replace(/\s+/g, "_") || "cliente"}.pdf`;
+  doc.save(nomeArquivo);
+};
 
   return (
     <div className="flex flex-col h-full">
