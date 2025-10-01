@@ -76,7 +76,7 @@ const CalculatorPage = ({ companyId, leads }) => {
     const doc = new jsPDF();
 
     // --- Cabeçalho ---
-    docsetFontSize(16);
+    doc.setFontSize(16);
     doc.text("Simulação de Financiamento", 14, 20);
 
     doc.setFontSize(12);
