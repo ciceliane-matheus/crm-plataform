@@ -1,5 +1,3 @@
-// src/CalculatorPage.js (VERSÃO FINAL, CORRIGIDA E COMPLETA)
-
 import { useState, useEffect } from 'react';
 import { auth } from './firebaseConfig';
 import axios from 'axios';
@@ -45,10 +43,10 @@ const CalculatorPage = ({ companyId, leads }) => {
       if (!user) throw new Error("Usuário não autenticado.");
       const token = await user.getIdToken();
       const payload = { 
-          valorImovel: valorImovel ? parseFloat(valorImovel.replace(/\./g, '').replace(',', '.')) : 0, 
-          valorFinanciamento: valorFinanciamento ? parseFloat(valorFinanciamento.replace(/\./g, '').replace(',', '.')) : 0,
+          valorImovel: valorImovel ? parseFloat(valorImovel.toString().replace(/\./g, '').replace(',', '.')) : 0, 
+          valorFinanciamento: valorFinanciamento ? parseFloat(valorFinanciamento.toString().replace(/\./g, '').replace(',', '.')) : 0,
           prazo: Number(prazo), 
-          rendaBruta: rendaBruta ? parseFloat(rendaBruta.replace(/\./g, '').replace(',', '.')) : 0,
+          rendaBruta: rendaBruta ? parseFloat(rendaBruta.toString().replace(/\./g, '').replace(',', '.')) : 0,
           sistemaAmortizacao, 
           indexador, 
           proponente: selectedLead?.lead, 
@@ -151,27 +149,11 @@ const CalculatorPage = ({ companyId, leads }) => {
                 </div>
                 <div>
                 <label className="block text-sm font-medium text-gray-700">Valor do Imóvel</label>
-                <CurrencyInput
-                    name="valorImovel"
-                    value={valorImovel}
-                    onValueChange={(value) => setValorImovel(value || '')}
-                    className="w-full mt-1 p-2 border rounded-lg"
-                    intlConfig={{ locale: 'pt-BR', currency: 'BRL' }}
-                    placeholder="R$ 0,00"
-                    required
-                />
+                <CurrencyInput name="valorImovel" value={valorImovel} onValueChange={(value) => setValorImovel(value || '')} className="w-full mt-1 p-2 border rounded-lg" intlConfig={{ locale: 'pt-BR', currency: 'BRL' }} placeholder="R$ 0,00" required />
                 </div>
                 <div>
                 <label className="block text-sm font-medium text-gray-700">Valor do Financiamento</label>
-                <CurrencyInput
-                    name="valorFinanciamento"
-                    value={valorFinanciamento}
-                    onValueChange={(value) => setValorFinanciamento(value || '')}
-                    className="w-full mt-1 p-2 border rounded-lg"
-                    intlConfig={{ locale: 'pt-BR', currency: 'BRL' }}
-                    placeholder="R$ 0,00"
-                    required
-                />
+                <CurrencyInput name="valorFinanciamento" value={valorFinanciamento} onValueChange={(value) => setValorFinanciamento(value || '')} className="w-full mt-1 p-2 border rounded-lg" intlConfig={{ locale: 'pt-BR', currency: 'BRL' }} placeholder="R$ 0,00" required />
                 </div>
                 <div>
                 <label className="block text-sm font-medium text-gray-700">Prazo (Meses)</label>
@@ -179,15 +161,7 @@ const CalculatorPage = ({ companyId, leads }) => {
                 </div>
                 <div>
                 <label className="block text-sm font-medium text-gray-700">Renda Bruta Mensal</label>
-                <CurrencyInput
-                    name="rendaBruta"
-                    value={rendaBruta}
-                    onValueChange={(value) => setRendaBruta(value || '')}
-                    className="w-full mt-1 p-2 border rounded-lg"
-                    intlConfig={{ locale: 'pt-BR', currency: 'BRL' }}
-                    placeholder="R$ 0,00"
-                    required
-                />
+                <CurrencyInput name="rendaBruta" value={rendaBruta} onValueChange={(value) => setRendaBruta(value || '')} className="w-full mt-1 p-2 border rounded-lg" intlConfig={{ locale: 'pt-BR', currency: 'BRL' }} placeholder="R$ 0,00" required />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                 <div><label className="block text-sm font-medium text-gray-700">Sistema de Amortização</label><select value={sistemaAmortizacao} onChange={e => setSistemaAmortizacao(e.target.value)} className="w-full mt-1 p-2 border rounded-lg bg-white"><option value="PRICE">PRICE</option><option value="SAC">SAC</option></select></div>
