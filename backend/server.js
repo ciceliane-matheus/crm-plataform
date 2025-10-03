@@ -459,10 +459,11 @@ app.post('/api/perform-daily-snapshot', async (req, res) => {
 
   const companyId = '3bHx7UfBFve1907kwqqT';
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 
   try {
-    console.log('Iniciando snapshot de performance diária...');
+    console.log('[CRON DIÁRIO] Iniciando snapshot de performance diária...');
     const companiesRef = db.collection('companies').doc(companyId);
     
     const columnsDocRef = companiesRef.collection('kanban_settings').doc('columns');
@@ -470,33 +471,45 @@ app.post('/api/perform-daily-snapshot', async (req, res) => {
     if (!columnsDoc.exists) {
       throw new Error('Configuração de colunas não encontrada.');
     }
+    
     const positiveConclusionStatusNames = columnsDoc.data().list
       .filter(c => c.type === 'positive_conclusion')
       .map(c => c.name);
 
-    if (positiveConclusionStatusNames.length === 0) {
-      console.log('Nenhuma coluna de conclusão positiva configurada. Snapshot não necessário.');
-      return res.status(200).send('Nenhuma coluna de sucesso configurada.');
+    const leadsRef = companiesRef.collection('leads');
+    let todaysQualifiedCount = 0;
+    if (positiveConclusionStatusNames.length > 0) {
+      // LÓGICA ATUALIZADA: Adiciona a verificação do status atual
+      const qQualified = leadsRef
+        .where('qualificationDate', '>=', startOfDay)
+        .where('qualificationDate', '<', endOfDay)
+        .where('status', 'in', positiveConclusionStatusNames); // <-- NOVA CONDIÇÃO
+
+      const qualifiedSnapshot = await qQualified.get();
+      todaysQualifiedCount = qualifiedSnapshot.size;
     }
 
-    const leadsRef = companiesRef.collection('leads');
-    const q = leadsRef.where('status', 'in', positiveConclusionStatusNames);
-    const querySnapshot = await q.get();
-    
-    const todaysQualifiedCount = querySnapshot.size;
-    console.log(`Total de leads em status de sucesso hoje: ${todaysQualifiedCount}`);
+    const qNew = leadsRef
+      .where('dateCreated', '>=', startOfDay.toISOString())
+      .where('dateCreated', '<', endOfDay.toISOString());
+    const newLeadsSnapshot = await qNew.get();
+    const todaysNewLeadsCount = newLeadsSnapshot.size;
 
-    const performanceRef = companiesRef.collection('daily_performance').doc(today.toISOString().slice(0, 10));
+    console.log(`[CRON DIÁRIO] Leads Captados Hoje: ${todaysNewLeadsCount}`);
+    console.log(`[CRON DIÁRIO] Leads Qualificados Hoje (Status Final): ${todaysQualifiedCount}`);
+
+    const performanceRef = companiesRef.collection('daily_performance').doc(startOfDay.toISOString().slice(0, 10));
     await performanceRef.set({
-      date: today,
-      qualifiedCount: todaysQualifiedCount
+      date: startOfDay,
+      qualifiedCount: todaysQualifiedCount,
+      newLeadsCount: todaysNewLeadsCount
     });
 
-    console.log('Snapshot de performance diária concluído com sucesso.');
+    console.log('[CRON DIÁRIO] Snapshot de performance diária concluído com sucesso.');
     res.status(200).send('Snapshot concluído com sucesso.');
 
   } catch (error) {
-    console.error('Erro ao executar o snapshot diário:', error);
+    console.error('[CRON DIÁRIO] Erro ao executar o snapshot diário:', error);
     res.status(500).send('Erro no servidor ao executar snapshot.');
   }
 });
@@ -881,6 +894,190 @@ app.post('/api/calculator/simulate', isAuthorized, async (req, res) => {
     res.status(500).json({ error: 'Falha ao processar a simulação.' });
   }
 });
+
+app.post('/api/generate-weekly-insights', async (req, res) => {
+  const { secret } = req.body;
+  if (secret !== process.env.CRON_JOB_SECRET) {
+    return res.status(401).send('Acesso não autorizado.');
+  }
+
+  const companyId = '3bHx7UfBFve1907kwqqT';
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'Chave de API do Gemini não configurada.' });
+
+  try {
+    console.log('[CRON] Iniciando geração de insights semanais...');
+    
+    // 1. Coleta de dados da última semana
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const leadsRef = db.collection('companies').doc(companyId).collection('leads');
+    
+    // Novos leads na semana
+    const newLeadsQuery = leadsRef.where('dateCreated', '>=', sevenDaysAgo.toISOString());
+    const newLeadsSnapshot = await newLeadsQuery.get();
+    const newLeadsCount = newLeadsSnapshot.size;
+
+    // Leads qualificados na semana
+    const qualifiedLeadsQuery = leadsRef.where('qualificationDate', '>=', sevenDaysAgo);
+    const qualifiedLeadsSnapshot = await qualifiedLeadsQuery.get();
+    const qualifiedLeadsCount = qualifiedLeadsSnapshot.size;
+
+    const dataSummary = `- Novos leads nos últimos 7 dias: ${newLeadsCount}\n- Leads qualificados nos últimos 7 dias: ${qualifiedLeadsCount}`;
+    console.log(`[CRON] Dados para análise: ${dataSummary.replace('\n', ' | ')}`);
+
+    // 2. Criação do Prompt e chamada à API do Gemini
+    const prompt = `Você é um analista de vendas sênior para uma plataforma de CRM. Analise os seguintes dados de performance da última semana:\n\n${dataSummary}\n\nGere 2 insights curtos, práticos e acionáveis para um gerente de vendas. A resposta DEVE ser um array JSON de strings. Exemplo: ["O número de novos leads aumentou 15%, capitalize nisso.", "A taxa de qualificação está em 50%, foque em treinar a equipe para melhorar a abordagem inicial."]`;
+    
+    const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
+    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } };
+    const geminiResponse = await axios.post(`${API_URL}?key=${apiKey}`, payload);
+    
+    let geminiTextResponse = geminiResponse.data.candidates[0].content.parts[0].text;
+    const jsonMatch = geminiTextResponse.match(/\[[\s\S]*\]/); // Encontra o array JSON na resposta
+    if (!jsonMatch || !jsonMatch[0]) throw new Error("A IA não retornou um array JSON válido.");
+
+    const insightsArray = JSON.parse(jsonMatch[0]);
+    console.log('[CRON] Insights recebidos da IA:', insightsArray);
+
+    // 3. Salva os insights no Firestore
+    const insightsRef = db.collection('companies').doc(companyId).collection('insights');
+    await insightsRef.add({
+      insights: insightsArray, // Salva o array de insights
+      generatedAt: new Date()
+    });
+
+    console.log('[CRON] Insights semanais gerados e salvos com sucesso.');
+    res.status(200).send('Insights gerados com sucesso.');
+
+  } catch (error) {
+    console.error('[CRON] Erro ao gerar insights semanais:', error.response ? error.response.data : error.message);
+    res.status(500).send('Erro no servidor ao gerar insights.');
+  }
+});
+
+app.post('/api/perform-monthly-snapshot', async (req, res) => {
+  const { secret } = req.body;
+  if (secret !== process.env.CRON_JOB_SECRET) {
+    return res.status(401).send('Acesso não autorizado.');
+  }
+
+  const companyId = '3bHx7UfBFve1907kwqqT'; 
+
+  try {
+    console.log('[CRON MENSAL] Iniciando snapshot de performance MENSAL...');
+    
+    const now = new Date();
+    const firstDayOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDayOfPreviousMonth = new Date(firstDayOfCurrentMonth);
+    lastDayOfPreviousMonth.setDate(lastDayOfPreviousMonth.getDate() - 1);
+
+    const year = lastDayOfPreviousMonth.getFullYear();
+    const month = lastDayOfPreviousMonth.getMonth();
+
+    const firstDayOfPreviousMonth = new Date(year, month, 1);
+    const docId = `${year}-${String(month + 1).padStart(2, '0')}`;
+    console.log(`[CRON MENSAL] Agregando dados para o período de: ${docId}`);
+
+    const dailyPerformanceRef = db.collection('companies').doc(companyId).collection('daily_performance');
+    const q = dailyPerformanceRef
+      .where('date', '>=', firstDayOfPreviousMonth)
+      .where('date', '<=', lastDayOfPreviousMonth);
+    const dailySnapshots = await q.get();
+
+    if (dailySnapshots.empty) {
+      console.log(`[CRON MENSAL] Nenhum dado diário encontrado para ${docId}. Encerrando.`);
+      return res.status(200).send(`Nenhum dado diário para agregar em ${docId}.`);
+    }
+
+    // LÓGICA DE AGREGAÇÃO ATUALIZADA
+    let totalQualifiedInMonth = 0;
+    let totalNewLeadsInMonth = 0; // <-- NOVA VARIÁVEL
+    dailySnapshots.forEach(doc => {
+      totalQualifiedInMonth += doc.data().qualifiedCount || 0;
+      totalNewLeadsInMonth += doc.data().newLeadsCount || 0; // <-- SOMANDO O NOVO CAMPO
+    });
+    console.log(`[CRON MENSAL] Total de Leads Captados no mês: ${totalNewLeadsInMonth}`);
+    console.log(`[CRON MENSAL] Total de Leads Qualificados no mês: ${totalQualifiedInMonth}`);
+
+    // SALVANDO AMBOS OS TOTAIS
+    const monthlyPerformanceRef = db.collection('companies').doc(companyId).collection('monthly_performance').doc(docId);
+    await monthlyPerformanceRef.set({
+      year: year,
+      month: month + 1,
+      totalQualifiedCount: totalQualifiedInMonth,
+      totalNewLeadsCount: totalNewLeadsInMonth, // <-- NOVO CAMPO
+      lastUpdated: new Date()
+    }, { merge: true });
+
+    console.log(`[CRON MENSAL] Snapshot de performance mensal para ${docId} concluído com sucesso.`);
+    res.status(200).send(`Snapshot mensal para ${docId} concluído.`);
+
+  } catch (error) {
+    console.error('[CRON MENSAL] Erro ao executar o snapshot mensal:', error);
+    res.status(500).send('Erro no servidor ao executar snapshot mensal.');
+  }
+});
+
+// =================================================================================
+// --- ROTAS DE ADMINISTRAÇÃO E DEBUG (USO LOCAL) ---
+// =================================================================================
+
+/* app.post('/api/admin/delete-all-leads', async (req, res) => {
+  const { secret } = req.body;
+  if (secret !== process.env.CRON_JOB_SECRET) {
+    return res.status(401).send('Acesso não autorizado. Secret inválido.');
+  }
+
+  const companyId = '3bHx7UfBFve1907kwqqT';
+  console.log(`[ADMIN] Recebida requisição para limpeza total da empresa ${companyId}`);
+
+  try {
+    // --- PARTE 1: EXCLUIR LEADS ---
+    const leadsRef = db.collection('companies').doc(companyId).collection('leads');
+    const leadsSnapshot = await leadsRef.get();
+    let deletedLeadsCount = 0;
+
+    if (!leadsSnapshot.empty) {
+      for (const leadDoc of leadsSnapshot.docs) {
+        // Exclui a subcoleção de mensagens
+        const messagesRef = leadDoc.ref.collection('messages');
+        const messagesSnapshot = await messagesRef.get();
+        for (const messageDoc of messagesSnapshot.docs) {
+          await messageDoc.ref.delete();
+        }
+        // Exclui o lead
+        await leadDoc.ref.delete();
+        deletedLeadsCount++;
+      }
+    }
+    console.log(`[ADMIN] ${deletedLeadsCount} leads foram excluídos.`);
+
+    // --- PARTE 2: EXCLUIR INSIGHTS (NOVO BLOCO) ---
+    console.log('[ADMIN] Excluindo todos os insights existentes...');
+    const insightsRef = db.collection('companies').doc(companyId).collection('insights');
+    const insightsSnapshot = await insightsRef.get();
+    let deletedInsightsCount = 0;
+
+    if (!insightsSnapshot.empty) {
+      const batch = db.batch(); // Usar batch é mais eficiente para múltiplas exclusões
+      insightsSnapshot.docs.forEach(doc => batch.delete(doc.ref));
+      await batch.commit();
+      deletedInsightsCount = insightsSnapshot.size;
+    }
+    console.log(`[ADMIN] ${deletedInsightsCount} insights foram excluídos.`);
+    
+    // --- MENSAGEM FINAL ---
+    const successMessage = `[ADMIN] Limpeza concluída. ${deletedLeadsCount} leads e ${deletedInsightsCount} insights foram excluídos com sucesso.`;
+    console.log(successMessage);
+    res.status(200).json({ message: successMessage });
+
+  } catch (error) {
+    console.error('[ADMIN] Erro ao executar limpeza total:', error);
+    res.status(500).json({ error: 'Falha ao executar a limpeza.' });
+  }
+}); */
 
 // =================================================================================
 // --- INICIALIZAÇÃO DO SERVIDOR ---

@@ -44,7 +44,7 @@ import CalculatorPage from './CalculatorPage';
 
 // Importações para o Firebase
 import { db, auth } from './firebaseConfig';
-import { collection, onSnapshot, query, addDoc, deleteDoc, doc, updateDoc, getDocs, getDoc, where, serverTimestamp, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, addDoc, deleteDoc, doc, updateDoc, getDocs, getDoc, where, serverTimestamp, orderBy, limit } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 // Importa o novo componente de autenticação
@@ -131,6 +131,25 @@ export default function App() {
   const [segments, setSegments] = useState([]);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  const [companyUsers, setCompanyUsers] = useState([]);
+
+  useEffect(() => {
+    if (!companyId) return;
+
+    // Busca a lista de usuários da empresa para usar em seletores
+    const usersRef = collection(db, "companies", companyId, "users");
+    const unsubscribe = onSnapshot(usersRef, (snapshot) => {
+      const fetchedUsers = snapshot.docs.map(doc => ({
+        id: doc.id,
+        // Supondo que o nome do usuário está salvo no documento dele
+        // Ajuste 'name' se o campo tiver outro nome (ex: 'displayName')
+        ...doc.data() 
+      }));
+      setCompanyUsers(fetchedUsers);
+    });
+
+    return () => unsubscribe();
+  }, [companyId]);
 
   useEffect(() => {
     if (!companyId) return;
@@ -441,7 +460,13 @@ export default function App() {
 
     switch (currentPage) {
       case 'dashboard':
-        return <Dashboard leads={leads} kanbanColumns={kanbanColumns} onViewLead={handleViewAndEditLead} />;
+        return <Dashboard 
+          leads={leads} 
+          kanbanColumns={kanbanColumns} 
+          onViewLead={handleViewAndEditLead} 
+          companyId={companyId}
+          companyUsers={companyUsers}
+        />;
       case 'leads':
         return <KanbanBoard 
           kanbanColumns={kanbanColumns}
@@ -457,6 +482,7 @@ export default function App() {
           setIsEditModalOpen={setIsEditModalOpen}
           selectedLead={selectedLead}
           setSelectedLead={setSelectedLead}
+          companyUsers={companyUsers}
         />;
       case 'automacao':
         return <AutomationPage companyId={companyId} kanbanColumns={kanbanColumns} />;
@@ -544,111 +570,112 @@ export default function App() {
   );
 }
 
-const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId }) => { // Adicionado companyId
-  const initialStatusNames = kanbanColumns.filter(c => c.type === 'initial').map(c => c.name);
-  const positiveConclusionStatusNames = kanbanColumns.filter(c => c.type === 'positive_conclusion').map(c => c.name);
-  const negativeConclusionStatusNames = kanbanColumns.filter(c => c.type === 'negative_conclusion').map(c => c.name);
-  
-  // Novo estado para guardar os dados históricos
-  const [historicalData, setHistoricalData] = useState([]);
+// App.js -> SUBSTITUA O COMPONENTE DASHBOARD INTEIRO POR ESTE CÓDIGO
 
-  // Novo useEffect para buscar os dados históricos de performance
+const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }) => {
+  const [historicalMonthlyData, setHistoricalMonthlyData] = useState([]);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [availableYears, setAvailableYears] = useState([new Date().getFullYear()]);
+  const [aiInsight, setAiInsight] = useState({ loading: true, data: null });
+
+  // Busca os dados de performance MENSAL
   useEffect(() => {
     if (!companyId) return;
-    const performanceRef = collection(db, "companies", companyId, "daily_performance");
-    const q = query(performanceRef, orderBy("date", "desc")); // Busca ordenado por data
-
+    const monthlyRef = collection(db, "companies", companyId, "monthly_performance");
+    const q = query(monthlyRef, orderBy("year", "desc"), orderBy("month", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setHistoricalData(data);
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setHistoricalMonthlyData(data);
+      if (data.length > 0) {
+        const years = [...new Set(data.map(d => d.year))];
+        const currentYear = new Date().getFullYear();
+        if (!years.includes(currentYear)) years.push(currentYear);
+        setAvailableYears(years.sort((a, b) => b - a));
+      }
     });
+    return () => unsubscribe();
+  }, [companyId]);
 
+  // Busca os insights da IA (COM A CORREÇÃO)
+  useEffect(() => {
+    if (!companyId) return;
+    setAiInsight({ loading: true, data: null });
+    const insightsRef = collection(db, "companies", companyId, "insights");
+    // --- LINHA CORRIGIDA ---
+    const q = query(insightsRef, orderBy("generatedAt", "desc"), limit(1)); // Usando a função limit() corretamente
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        setAiInsight({ loading: false, data: snapshot.docs[0].data() });
+      } else {
+        setAiInsight({ loading: false, data: null });
+      }
+    });
     return () => unsubscribe();
   }, [companyId]);
 
   const dashboardData = useMemo(() => {
+    const positiveConclusionStatusNames = kanbanColumns.filter(c => c.type === 'positive_conclusion').map(c => c.name);
+    const initialStatusNames = kanbanColumns.filter(c => c.type === 'initial').map(c => c.name);
     const now = new Date();
     const todayStr = format(now, 'yyyy-MM-dd');
+
+    const qualifiedLeadsToday = leads.filter(l => l.qualificationDate && format(l.qualificationDate.toDate(), 'yyyy-MM-dd') === todayStr && positiveConclusionStatusNames.includes(l.status)).length;
+    const newLeadsToday = leads.filter(l => format(new Date(l.dateCreated), 'yyyy-MM-dd') === todayStr).length;
+
+    const yearlyTotalsFromCron = historicalMonthlyData.filter(d => d.year === selectedYear).reduce((acc, curr) => {
+        acc.captados += curr.totalNewLeadsCount || 0;
+        acc.qualificados += curr.totalQualifiedCount || 0;
+        return acc;
+      }, { captados: 0, qualificados: 0 });
     
-    // --- LÓGICA DE CÁLCULO PARA "HOJE" (EM TEMPO REAL) ---
-    const leadsQualifiedToday = leads.filter(lead => {
-      if (!lead.qualificationDate) return false;
-      const qualDateStr = format(lead.qualificationDate.toDate(), 'yyyy-MM-dd');
-      return qualDateStr === todayStr;
+    const displayYearlyTotals = { captados: yearlyTotalsFromCron.captados + newLeadsToday, qualificados: yearlyTotalsFromCron.qualificados + qualifiedLeadsToday };
+
+    const monthlyPerformanceForYear = Array.from({ length: 12 }, (_, i) => {
+      const monthIndex = i + 1;
+      const monthData = historicalMonthlyData.find(d => d.year === selectedYear && d.month === monthIndex);
+      let captados = monthData ? monthData.totalNewLeadsCount : 0;
+      let qualificados = monthData ? monthData.totalQualifiedCount : 0;
+      if (selectedYear === now.getFullYear() && monthIndex === (now.getMonth() + 1)) {
+        captados += newLeadsToday;
+        qualificados += qualifiedLeadsToday;
+      }
+      return { name: new Date(selectedYear, i, 1).toLocaleString('pt-BR', { month: 'short' }), Captados: captados, Qualificados: qualificados };
     });
     
-    // O total de hoje é a contagem de leads que estão em uma coluna de sucesso E foram qualificados hoje
-    const todaysLiveQualifiedCount = leads.filter(lead => 
-      positiveConclusionStatusNames.includes(lead.status) &&
-      leadsQualifiedToday.some(lq => lq.id === lead.id)
-    ).length;
-    
-    // --- LÓGICA DO GRÁFICO DIÁRIO (HÍBRIDO) ---
-    const last7Days = [];
-    for (let i = 6; i >= 0; i--) {
-      const date = subDays(now, i);
-      const dateKey = format(date, 'yyyy-MM-dd');
-      const nameKey = format(date, 'dd/MMM', { locale: ptBR });
-      
-      let qualifiedCount = 0;
-      if (dateKey === todayStr) {
-        // Para hoje, usamos o valor em tempo real
-        qualifiedCount = todaysLiveQualifiedCount;
-      } else {
-        // Para dias passados, buscamos no histórico consolidado
-        const historyEntry = historicalData.find(h => h.id === dateKey);
-        if (historyEntry) {
-          qualifiedCount = historyEntry.qualifiedCount;
-        }
-      }
-      
-      last7Days.push({ name: nameKey, Qualificados: qualifiedCount });
-    }
-    const dailyChartData = last7Days;
+    const sevenDaysAgo = subDays(new Date(), 7);
+    const leadsLast7Days = leads.filter(l => new Date(l.dateCreated) >= sevenDaysAgo);
+    const qualifiedLast7Days = leads.filter(l => l.qualificationDate && l.qualificationDate.toDate() >= sevenDaysAgo && positiveConclusionStatusNames.includes(l.status)).length;
+    const funnelData = { new: leadsLast7Days.length, contacted: leadsLast7Days.filter(l => !initialStatusNames.includes(l.status)).length, qualified: qualifiedLast7Days };
+    const recentActivities = leads.sort((a,b) => (b.timestamp?.toDate() || 0) - (a.timestamp?.toDate() || 0)).slice(0, 5);
 
-    // O restante da lógica agora usa 'qualificationDate' para precisão
-    const qualifiedLeads = leads.filter(l => l.qualificationDate); // Todos que já foram qualificados um dia
-    
-    const qualificationsByWeek = qualifiedLeads.reduce((acc, lead) => {
-      const qualificationDate = lead.qualificationDate.toDate();
-      const weekStartDate = startOfWeek(qualificationDate);
-      const weekKey = format(weekStartDate, 'dd/MMM', { locale: ptBR });
-      acc[weekKey] = (acc[weekKey] || 0) + 1;
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    const qualifiedThisMonth = leads.filter(l =>
+      l.qualificationDate &&
+      l.qualificationDate.toDate() >= startOfMonth &&
+      l.qualificationDate.toDate() <= endOfMonth &&
+      positiveConclusionStatusNames.includes(l.status) &&
+      l.responsibleUserId
+    );
+
+    const performanceByUser = qualifiedThisMonth.reduce((acc, lead) => {
+      acc[lead.responsibleUserId] = (acc[lead.responsibleUserId] || 0) + 1;
       return acc;
     }, {});
-    const weeklyChartData = Object.entries(qualificationsByWeek).map(([name, value]) => ({ name, 'Leads Qualificados': value })).slice(-8);
 
-    const sevenDaysAgo = subDays(now, 7);
-    const recentLeads = leads.filter(l => new Date(l.dateCreated) >= sevenDaysAgo);
-    const qualifiedInLast7Days = qualifiedLeads.filter(l => l.qualificationDate.toDate() >= sevenDaysAgo).length;
-    const totalContactedInLast7Days = recentLeads.filter(l => !initialStatusNames.includes(l.status)).length;
-    const conversionRate = totalContactedInLast7Days > 0 ? ((qualifiedInLast7Days / totalContactedInLast7Days) * 100).toFixed(0) : 0;
-    
-    let avgTimeToQualify = 'N/A';
-    if (qualifiedLeads.length > 0) {
-      const qualifiedWithDates = qualifiedLeads.filter(l => l.dateCreated && l.qualificationDate);
-      const totalTime = qualifiedWithDates.reduce((acc, lead) => acc + (lead.qualificationDate.toDate() - new Date(lead.dateCreated)), 0);
-      if (totalTime > 0) {
-        avgTimeToQualify = `${((totalTime / qualifiedWithDates.length) / (1000 * 60 * 60)).toFixed(1)}h`;
-      }
-    }
+    const rankingData = Object.entries(performanceByUser)
+      .map(([userId, count]) => {
+        const user = (companyUsers || []).find(u => u.id === userId);
+        return {
+          name: user?.name || user?.email || 'Desconhecido',
+          qualified: count
+        };
+      })
+      .sort((a, b) => b.qualified - a.qualified);
 
-    const hotLeads = leads.filter(l => initialStatusNames.includes(l.status) && (now - new Date(l.dateCreated)) / (1000*60*60) <= 48);
-    const stalledLeads = qualifiedLeads.filter(l => positiveConclusionStatusNames.includes(l.status) && (now - l.qualificationDate.toDate()) / (1000*60*60*24) > 3);
-    const recentActivities = leads.sort((a,b) => (b.timestamp?.toDate() || 0) - (a.timestamp?.toDate() || 0)).slice(0,5);
-
-    return { metrics: { newLeads: recentLeads.length, conversionRate: `${conversionRate}%`, avgTimeToQualify }, focus: { hotLeads, stalledLeads }, dailyChartData, weeklyChartData, recentActivities };
-  }, [leads, kanbanColumns, historicalData, initialStatusNames, positiveConclusionStatusNames]);
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Bom dia";
-    if (hour < 18) return "Boa tarde";
-    return "Boa noite";
-  };
+    return { yearlyTotals: displayYearlyTotals, monthlyPerformanceForYear, funnelData, recentActivities, rankingData };
+  }, [leads, kanbanColumns, historicalMonthlyData, selectedYear, companyUsers]);
   
   const generateActivityText = (lead) => {
     const creationTime = new Date(lead.dateCreated).getTime();
@@ -663,6 +690,8 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId }) => { // Adic
   };
 
   const renderActivityIcon = (lead) => {
+    const positiveConclusionStatusNames = kanbanColumns.filter(c => c.type === 'positive_conclusion').map(c => c.name);
+    const negativeConclusionStatusNames = kanbanColumns.filter(c => c.type === 'negative_conclusion').map(c => c.name);
     if (positiveConclusionStatusNames.includes(lead.status)) {
       return <CheckCircle className="text-green-500" size={20} />;
     }
@@ -671,70 +700,88 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId }) => { // Adic
     }
     return <MessageCircle className="text-blue-500" size={20} />;
   };
-
+  
   return (
-    <div className="flex flex-col h-full">
-      {/* O texto de boas-vindas foi REMOVIDO */}
-
-      {/* Layout principal em grade, sem o espaçamento superior de antes */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 lg:gap-8 space-y-8 lg:space-y-0">
-        
-        {/* Coluna Principal (2/3 da tela) */}
-        <div className="lg:col-span-2 space-y-8">
-          <div>
-            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center"><Target className="mr-2 text-indigo-500"/> Foco do Dia</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white p-5 rounded-xl shadow-lg border-l-4 border-orange-400 flex flex-col">
-                <h4 className="font-bold text-gray-700 mb-3 flex-shrink-0">🔥 Ação Rápida (Novos Leads)</h4>
-                <div className="space-y-3 overflow-y-auto max-h-32 pr-1">
-                  {dashboardData.focus.hotLeads.length > 0 ? dashboardData.focus.hotLeads.map(lead => ( <div key={lead.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg"><div><p className="font-semibold text-sm text-gray-800">{lead.name}</p><p className="text-xs text-gray-500">{lead.company || 'Sem empresa'}</p></div><button onClick={() => onViewLead(lead)} className="text-indigo-600 hover:text-indigo-800 text-sm font-semibold flex-shrink-0 ml-2">Ver</button></div>)) : <p className="text-sm text-gray-500 text-center py-4">Nenhum lead novo para contatar.</p>}
-                </div>
-              </div>
-              <div className="bg-white p-5 rounded-xl shadow-lg border-l-4 border-red-500 flex flex-col">
-                <h4 className="font-bold text-gray-700 mb-3 flex-shrink-0">⏰ Follow-ups Atrasados</h4>
-                <div className="space-y-3 overflow-y-auto max-h-32 pr-1">
-                  {dashboardData.focus.stalledLeads.length > 0 ? dashboardData.focus.stalledLeads.map(lead => ( <div key={lead.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg"><div><p className="font-semibold text-sm text-gray-800">{lead.name}</p><p className="text-xs text-gray-500">Estagnado há {Math.floor((new Date() - lead.timestamp.toDate()) / (1000 * 60 * 60 * 24))} dias</p></div><button onClick={() => onViewLead(lead)} className="text-indigo-600 hover:text-indigo-800 text-sm font-semibold flex-shrink-0 ml-2">Reativar</button></div>)) : <p className="text-sm text-gray-500 text-center py-4">Nenhum lead estagnado.</p>}
-                </div>
-              </div>
+    <div className="flex flex-col h-full space-y-6">
+      <div className="flex-shrink-0 flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-gray-900">Dashboard de Performance</h2>
+        <div className="flex items-center gap-2">
+          <label htmlFor="year-select" className="text-sm font-semibold text-gray-700">Ano:</label>
+          <select id="year-select" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="p-2 border rounded-lg bg-white shadow-sm text-sm">
+            {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white p-4 rounded-xl shadow-lg flex flex-col justify-center">
+          <h4 className="font-bold text-sm opacity-80 text-center">Performance de {selectedYear}</h4>
+          <div className="flex items-baseline justify-evenly mt-2">
+            <div className="text-center">
+              <p className="text-3xl font-bold">{dashboardData.yearlyTotals.captados}</p>
+              <p className="text-xs font-semibold opacity-80">Leads Captados</p>
             </div>
-          </div>
-          
-          {/* Gráficos empilhados verticalmente */}
-          <div className="space-y-8">
-            <div className="bg-white p-5 rounded-xl shadow-lg h-64 flex flex-col">
-              <h3 className="text-lg font-semibold text-gray-800 mb-2 flex-shrink-0">Performance Diária (Últimos 7 dias)</h3>
-              <div className="flex-grow"><ResponsiveContainer width="100%" height="100%"><LineChart data={dashboardData.dailyChartData} margin={{ top: 5, right: 20, left: -10, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis allowDecimals={false} /><Tooltip /><Line type="monotone" dataKey="Qualificados" stroke="#4f46e5" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer></div>
-            </div>
-            <div className="bg-white p-5 rounded-xl shadow-lg h-64 flex flex-col">
-              <h3 className="text-lg font-semibold text-gray-800 mb-2 flex-shrink-0">Performance Semanal</h3>
-              <div className="flex-grow"><ResponsiveContainer width="100%" height="100%"><BarChart data={dashboardData.weeklyChartData} margin={{ top: 5, right: 20, left: -10, bottom: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis allowDecimals={false} /><Tooltip cursor={{fill: 'rgba(79, 70, 229, 0.1)'}} /><Bar dataKey="Leads Qualificados" fill="#4f46e5" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div>
+            <div className="text-center">
+              <p className="text-3xl font-bold">{dashboardData.yearlyTotals.qualificados}</p>
+              <p className="text-xs font-semibold opacity-80">Leads Qualificados</p>
             </div>
           </div>
         </div>
-
-        {/* Coluna Lateral (1/3 da tela) */}
-        <div className="lg:col-span-1 space-y-8">
-          <div>
-            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center"><TrendingUp className="mr-2 text-indigo-500"/> Performance</h3>
-            <div className="space-y-4">
-              <div className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white p-5 rounded-xl shadow-lg"><h4 className="font-bold text-sm opacity-80">Novos Leads (Últimos 7 dias)</h4><p className="text-3xl font-bold">{dashboardData.metrics.newLeads}</p></div>
-              <div className="bg-white p-5 rounded-xl shadow-lg"><h4 className="font-bold text-sm text-gray-500">Taxa de Conversão</h4><p className="text-3xl font-bold text-gray-800">{dashboardData.metrics.conversionRate}</p></div>
-              <div className="bg-white p-5 rounded-xl shadow-lg"><h4 className="font-bold text-sm text-gray-500">Tempo Médio p/ Qualificar</h4><p className="text-3xl font-bold text-gray-800">{dashboardData.metrics.avgTimeToQualify}</p></div>
-            </div>
+        <div className="bg-white p-4 rounded-xl shadow-lg lg:col-span-2">
+          <h3 className="font-bold text-sm text-gray-700 mb-2">Funil de Vendas (Últimos 7 dias)</h3>
+          <div className="flex items-center justify-between text-center">
+            <div className="w-1/3"><p className="text-2xl font-bold text-gray-800">{dashboardData.funnelData.new}</p><p className="text-xs font-semibold text-gray-500">Novos Leads</p></div>
+            <ChevronRight size={20} className="text-gray-300" />
+            <div className="w-1/3"><p className="text-2xl font-bold text-gray-800">{dashboardData.funnelData.contacted}</p><p className="text-xs font-semibold text-gray-500">Contatados</p></div>
+            <ChevronRight size={20} className="text-gray-300" />
+            <div className="w-1/3"><p className="text-2xl font-bold text-green-500">{dashboardData.funnelData.qualified}</p><p className="text-xs font-semibold text-green-600">Qualificados</p></div>
           </div>
-          <div className="bg-white p-5 rounded-xl shadow-lg flex flex-col flex-grow">
-            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex-shrink-0">Atividades Recentes</h3>
-            <div className="space-y-4 overflow-y-auto flex-1 pr-1">
-              {dashboardData.recentActivities.map(lead => ( <div key={lead.id} className="flex items-start"><div className="mt-1 mr-3 flex-shrink-0">{renderActivityIcon(lead)}</div><div><p className="text-sm font-semibold text-gray-800">{lead.name}</p><p className="text-xs text-gray-500">{generateActivityText(lead)}</p></div></div>))}
-            </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="bg-white p-4 rounded-xl shadow-lg lg:col-span-2 h-72 flex flex-col">
+          <h3 className="text-base font-semibold text-gray-800 mb-2">Captados vs. Qualificados ({selectedYear})</h3>
+          <div className="flex-grow">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={dashboardData.monthlyPerformanceForYear} margin={{ top: 10, right: 20, left: -10, bottom: -5 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }}/><Tooltip /><Legend wrapperStyle={{fontSize: "12px"}} />
+                <Bar dataKey="Captados" fill="#a5b4fc" radius={[4, 4, 0, 0]} name="Leads Captados" />
+                <Bar dataKey="Qualificados" fill="#4f46e5" radius={[4, 4, 0, 0]} name="Leads Qualificados" />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-lg flex flex-col">
+          <h3 className="font-bold text-sm text-gray-700 mb-3">Ranking de Corretores (Mês)</h3>
+          {dashboardData.rankingData.length > 0 ? (
+            <div className="space-y-3 flex-grow">
+              {dashboardData.rankingData.map((user, index) => (
+                <div key={user.name} className="flex items-center text-sm">
+                  <span className="font-bold text-gray-400 w-6">{index + 1}.</span>
+                  <span className="flex-grow font-semibold text-gray-700">{user.name}</span>
+                  <span className="font-bold text-indigo-600">{user.qualified}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex-grow flex items-center justify-center">
+              <p className="text-xs text-center text-gray-400 p-2 bg-gray-50 rounded-md">Nenhum corretor qualificou leads este mês ainda.</p>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="bg-white p-4 rounded-xl shadow-lg border-l-4 border-purple-500 lg:col-span-2">
+           <h3 className="font-bold text-sm text-gray-700 mb-2 flex items-center"><Sparkles size={16} className="mr-2 text-purple-500"/> Insights da Semana</h3>
+           {aiInsight.loading ? ( <div className="flex items-center text-sm text-gray-500"><Loader2 className="animate-spin mr-2" size={16} /> Carregando insights...</div>) : aiInsight.data && aiInsight.data.insights ? ( <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">{aiInsight.data.insights.map((insight, index) => (<li key={index}>{insight}</li>))}</ul>) : ( <p className="text-sm text-gray-500 text-center py-2">Nenhum insight disponível. Acione o robô de análise para gerar.</p>)}
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-lg flex flex-col">
+          <h3 className="font-bold text-sm text-gray-700 mb-3">Atividades Recentes</h3>
+          <div className="space-y-3 overflow-y-auto flex-1">{dashboardData.recentActivities.map(lead => ( <div key={lead.id} className="flex items-start"><div className="mt-1 mr-3 flex-shrink-0">{renderActivityIcon(lead)}</div><div><p className="text-xs font-semibold text-gray-800">{lead.name}</p><p className="text-xs text-gray-500">{generateActivityText(lead)}</p></div></div>))}</div>
         </div>
       </div>
     </div>
   );
 };
-
-// App.js -> SUBSTITUA O COMPONENTE AutomationPage ATUAL POR ESTE
 
 const AutomationPage = ({ companyId, kanbanColumns }) => {
   const [automations, setAutomations] = useState([]);
@@ -1564,6 +1611,8 @@ const SegmentManagerModal = ({ isOpen, onClose, companyId }) => {
   );
 };
 
+// App.js -> Substitua o componente KanbanBoard inteiro por este
+
 const KanbanBoard = ({ 
   kanbanColumns, 
   tags,
@@ -1577,11 +1626,13 @@ const KanbanBoard = ({
   isEditModalOpen, 
   setIsEditModalOpen, 
   selectedLead, 
-  setSelectedLead 
+  setSelectedLead,
+  companyUsers // <-- RECEBENDO A NOVA PROP
 }) => {
   const [viewMode, setViewMode] = useState('active');
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
-  const [newLead, setNewLead] = useState({ name: '', interestSummary: '', email: '', phone: '', businessSegment: '', tags: [], details: { painPoints: '', solutionNotes: '', nextSteps: '' } });
+  // Adiciona o responsibleUserId ao estado inicial do novo lead
+  const [newLead, setNewLead] = useState({ name: '', interestSummary: '', email: '', phone: '', businessSegment: '', tags: [], details: { painPoints: '', solutionNotes: '', nextSteps: '' }, responsibleUserId: '' });
   const [isManageColumnsModalOpen, setIsManageColumnsModalOpen] = useState(false);
   const [editingColumns, setEditingColumns] = useState([]);
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
@@ -1589,6 +1640,8 @@ const KanbanBoard = ({
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // O resto das funções (handleDragStart, handleDrop, etc.) permanece o mesmo
+  // ... (funções inalteradas) ...
   const displayedLeads = useMemo(() => {
     if (viewMode === 'active') {
       return leads.filter(lead => lead.status !== 'Arquivado');
@@ -1627,7 +1680,8 @@ const KanbanBoard = ({
   const handleDragOver = (e) => { e.preventDefault(); };
   const handleDrop = (e, targetStatus) => { e.preventDefault(); const leadId = e.dataTransfer.getData('leadId'); const sourceStatus = e.dataTransfer.getData('sourceStatus'); const leadToUpdate = displayedLeads.find(lead => lead.id === leadId); if (leadToUpdate) { onSave({ ...leadToUpdate, status: targetStatus }, sourceStatus); } };
   const openNewLeadModal = () => {
-    setNewLead({ name: '', interestSummary: '', email: '', phone: '', cpf: '', businessSegment: '', status: kanbanColumns.length > 0 ? kanbanColumns[0].name : '', tags: [], details: { painPoints: '', solutionNotes: '', nextSteps: '' } });
+    // Adicionado responsibleUserId ao reset do formulário
+    setNewLead({ name: '', interestSummary: '', email: '', phone: '', cpf: '', businessSegment: '', status: kanbanColumns.length > 0 ? kanbanColumns[0].name : '', tags: [], details: { painPoints: '', solutionNotes: '', nextSteps: '' }, responsibleUserId: auth.currentUser?.uid || '' });
     setIsNewLeadModalOpen(true);
   };
   const handleNewLeadChange = (e) => { const { name, value } = e.target; setNewLead(prev => ({ ...prev, [name]: value })); };
@@ -1635,17 +1689,17 @@ const KanbanBoard = ({
 
   const handleAddLeadSubmit = async (e) => {
   e.preventDefault();
-  setIsSubmitting(true); // Ativa o loading
+  setIsSubmitting(true);
 
   try {
-    await onAddLead(newLead); // Espera a função do banco de dados terminar
-    toast.success('Lead adicionado com sucesso!'); // Dispara a notificação de sucesso
+    await onAddLead(newLead);
+    toast.success('Lead adicionado com sucesso!');
     setIsNewLeadModalOpen(false);
   } catch (error) {
     console.error("Erro ao adicionar lead:", error);
-    toast.error('Falha ao adicionar o lead. Tente novamente.'); // Dispara a notificação de erro
+    toast.error('Falha ao adicionar o lead. Tente novamente.');
   } finally {
-    setIsSubmitting(false); // Desativa o loading, mesmo se der erro
+    setIsSubmitting(false);
   }
 };
 
@@ -1681,8 +1735,10 @@ const KanbanBoard = ({
     }
   };
 
+  // O JSX principal do KanbanBoard permanece o mesmo...
   return (
     <div className="p-4 md:p-8 flex flex-col h-full">
+      {/* ... (cabeçalho do kanban inalterado) ... */}
       <div className="flex justify-between items-center mb-6 flex-shrink-0">
         <h2 className="text-3xl font-bold text-gray-900">
           {viewMode === 'active' ? 'Qualificação de Leads' : 'Leads Arquivados'}
@@ -1709,7 +1765,7 @@ const KanbanBoard = ({
            <button onClick={openNewLeadModal} className="bg-indigo-600 text-white px-4 py-2 rounded-full hover:bg-indigo-700 transition-colors flex items-center"><Plus className="h-5 w-5 mr-2" />Novo Lead</button>
         </div>
       </div>
-
+      {/* ... (resto do JSX do kanban inalterado) ... */}
       <div className="flex-1 min-h-0">
         <div className="h-full w-full overflow-x-auto">
           <div className="flex space-x-4 pb-4 h-full min-w-max">
@@ -1751,71 +1807,60 @@ const KanbanBoard = ({
           </div>
         </div>
       </div>
-      
-      {isManageColumnsModalOpen && ( <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4"> <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg"> <h3 className="text-2xl font-bold text-gray-900 mb-6">Gerenciar Colunas do Kanban</h3> <div className="space-y-3 mb-6 max-h-60 overflow-y-auto p-1"> {editingColumns.map((col, index) => ( <div key={col.id || index} className="flex items-center space-x-2 bg-gray-50 p-2 rounded"> <input type="text" value={col.name} onChange={(e) => handleColumnNameChange(index, e.target.value)} className="flex-1 p-2 border rounded-lg" /> <select value={col.type || 'transit'} onChange={(e) => handleColumnTypeChange(index, e.target.value)} className="p-2 border rounded-lg bg-white"> {COLUMN_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)} </select> <button onClick={() => handleDeleteColumn(index)} className="text-red-500 hover:text-red-700 p-2 rounded-full"><Trash2 size={18} /></button> </div> ))} </div> <button onClick={handleAddNewColumn} className="w-full border-2 border-dashed border-gray-300 text-gray-500 p-3 rounded-lg hover:bg-gray-100 mb-6">Adicionar Nova Coluna</button> <div className="flex justify-end space-x-4"> <button type="button" onClick={() => setIsManageColumnsModalOpen(false)} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button> 
-      <button 
-        type="button" 
-        onClick={handleSaveChanges} 
-        className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 flex items-center justify-center w-44" // Largura fixa
-        disabled={isSubmitting}
-      >
-        {isSubmitting ? (
-          <>
-            <Loader2 className="h-5 w-5 animate-spin mr-2" />
-            Salvando...
-          </>
-        ) : (
-          'Salvar Alterações'
-        )}
-      </button>
-       </div> </div> </div> )}
 
-      {isNewLeadModalOpen && ( <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4"> <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-xl relative"> <button onClick={() => setIsNewLeadModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"> <X size={24} /> </button> <h3 className="text-2xl font-bold text-gray-900 mb-4">Adicionar Novo Lead</h3> <form onSubmit={handleAddLeadSubmit} className="overflow-y-auto" style={{maxHeight: '75vh'}}>
-      {/* --- INÍCIO DO BLOCO CORRIGIDO --- */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Título do Lead</label>
-            <input type="text" name="interestSummary" placeholder="Ex: Cliente interessado no Plano Pro" value={newLead.interestSummary} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" />
-        </div>
-        <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
-            <input type="text" name="name" value={newLead.name} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" required />
-        </div>
-        <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input type="email" name="email" value={newLead.email} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" />
-        </div>
-        <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
-            <input type="tel" name="phone" value={newLead.phone} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" />
-        </div>
-        <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">CPF (opcional)</label>
-            <input
-                type="text"
-                name="cpf"
-                placeholder="000.000.000-00"
-                value={newLead.cpf || ''}
-                onChange={handleNewLeadChange}
-                className="w-full p-3 border rounded-lg"
-            />
-        </div>
-        <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Segmento</label>
-            <select name="businessSegment" value={newLead.businessSegment} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg bg-white">
-                <option value="">Selecione um segmento</option>
-                {segments.map(seg => <option key={seg.id} value={seg.name}>{seg.name}</option>)}
-            </select>
-        </div>
-        <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select name="status" value={newLead.status} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg bg-white">
-                {kanbanColumns.map(col => <option key={col.id} value={col.name}>{col.name}</option>)}
-            </select>
-        </div>
-      </div>
-      {/* --- FIM DO BLOCO CORRIGIDO --- */}
-      <div className="space-y-3"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Pontos de dor</label><textarea name="painPoints" value={newLead.details.painPoints} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg resize-y"></textarea></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas sobre a solução</label><textarea name="solutionNotes" value={newLead.details.solutionNotes} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg resize-y"></textarea></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Próximos passos</label><textarea name="nextSteps" value={newLead.details.nextSteps} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg resize-y"></textarea></div> </div> <TagSelector lead={newLead} /> <div className="flex justify-end space-x-4 mt-6"> <button type="button" onClick={() => setIsNewLeadModalOpen(false)} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button>
+      {/* MODAL DE NOVO LEAD ATUALIZADO */}
+      {isNewLeadModalOpen && (
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-xl relative">
+            <button onClick={() => setIsNewLeadModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"> <X size={24} /> </button>
+            <h3 className="text-2xl font-bold text-gray-900 mb-4">Adicionar Novo Lead</h3>
+            <form onSubmit={handleAddLeadSubmit} className="overflow-y-auto" style={{maxHeight: '75vh'}}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Título do Lead</label>
+                    <input type="text" name="interestSummary" placeholder="Ex: Cliente interessado no Plano Pro" value={newLead.interestSummary} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" />
+                </div>
+                {/* ... (outros campos: Nome, Email, Telefone, CPF) ... */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
+                    <input type="text" name="name" value={newLead.name} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" required />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input type="email" name="email" value={newLead.email} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
+                    <input type="tel" name="phone" value={newLead.phone} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">CPF (opcional)</label>
+                    <input type="text" name="cpf" placeholder="000.000.000-00" value={newLead.cpf || ''} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg"/>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Segmento</label>
+                  <select name="businessSegment" value={newLead.businessSegment} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg bg-white">
+                      <option value="">Selecione um segmento</option>
+                      {segments.map(seg => <option key={seg.id} value={seg.name}>{seg.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select name="status" value={newLead.status} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg bg-white">
+                      {kanbanColumns.map(col => <option key={col.id} value={col.name}>{col.name}</option>)}
+                  </select>
+                </div>
+                {/* --- NOVO CAMPO DE SELEÇÃO DO CORRETOR --- */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Corretor Responsável</label>
+                  <select name="responsibleUserId" value={newLead.responsibleUserId} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg bg-white" required>
+                    <option value="">Selecione um corretor</option>
+                    {companyUsers.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
+                  </select>
+                </div>
+              </div>
+              {/* ... (resto do formulário inalterado) ... */}
+              <div className="space-y-3"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Pontos de dor</label><textarea name="painPoints" value={newLead.details.painPoints} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg resize-y"></textarea></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas sobre a solução</label><textarea name="solutionNotes" value={newLead.details.solutionNotes} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg resize-y"></textarea></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Próximos passos</label><textarea name="nextSteps" value={newLead.details.nextSteps} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg resize-y"></textarea></div> </div> <TagSelector lead={newLead} /> <div className="flex justify-end space-x-4 mt-6"> <button type="button" onClick={() => setIsNewLeadModalOpen(false)} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button>
       <button 
         type="submit" 
         className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 flex items-center justify-center disabled:bg-indigo-400"
@@ -1830,15 +1875,21 @@ const KanbanBoard = ({
           'Adicionar Lead'
         )}
       </button>
-       </div> </form> </div> </div> )}
+       </div> </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EDIÇÃO DE LEAD ATUALIZADO */}
       {isEditModalOpen && selectedLead && (
-          <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-xl relative">
-                  <button onClick={() => setIsEditModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"><X size={24} /></button>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-4">Editar Lead</h3>
-                  <form onSubmit={handleEditSubmit} className="overflow-y-auto" style={{ maxHeight: '75vh' }}>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                          <div className="md:col-span-2">
+        <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-xl relative">
+                <button onClick={() => setIsEditModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"><X size={24} /></button>
+                <h3 className="text-2xl font-bold text-gray-900 mb-4">Editar Lead</h3>
+                <form onSubmit={handleEditSubmit} className="overflow-y-auto" style={{ maxHeight: '75vh' }}>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        {/* ... (outros campos de edição: Título, Nome, etc.) ... */}
+                        <div className="md:col-span-2">
                               <label className="block text-sm font-medium text-gray-700 mb-1">Título do Lead</label>
                               <input type="text" name="interestSummary" placeholder="Ex: Cliente interessado no Plano Pro" value={selectedLead.interestSummary || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg" />
                           </div>
@@ -1856,14 +1907,7 @@ const KanbanBoard = ({
                           </div>
                           <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">CPF (opcional)</label>
-                              <input
-                                  type="text"
-                                  name="cpf"
-                                  placeholder="000.000.000-00"
-                                  value={selectedLead.cpf || ''}
-                                  onChange={handleEditChange}
-                                  className="w-full p-3 border rounded-lg"
-                              />
+                              <input type="text" name="cpf" placeholder="000.000.000-00" value={selectedLead.cpf || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg"/>
                           </div>
                           <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">Segmento</label>
@@ -1878,8 +1922,17 @@ const KanbanBoard = ({
                                   {kanbanColumns.map(col => <option key={col.id} value={col.name}>{col.name}</option>)}
                               </select>
                           </div>
-                      </div>
-                      <div className="space-y-4">
+                        {/* --- NOVO CAMPO DE SELEÇÃO DO CORRETOR --- */}
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Corretor Responsável</label>
+                          <select name="responsibleUserId" value={selectedLead.responsibleUserId || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg bg-white" required>
+                            <option value="">Selecione um corretor</option>
+                            {companyUsers.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
+                          </select>
+                        </div>
+                    </div>
+                    {/* ... (resto do formulário de edição inalterado) ... */}
+                    <div className="space-y-4">
                           <div><label className="block text-sm font-medium text-gray-700 mb-1">Pontos de dor</label><textarea name="painPoints" value={selectedLead.details?.painPoints || ''} onChange={handleEditDetailsChange} rows="3" className="w-full p-3 border rounded-lg resize-y" ></textarea></div>
                           <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas sobre a solução</label><textarea name="solutionNotes" value={selectedLead.details?.solutionNotes || ''} onChange={handleEditDetailsChange} rows="3" className="w-full p-3 border rounded-lg resize-y" ></textarea></div>
                           <div><label className="block text-sm font-medium text-gray-700 mb-1">Próximos passos</label><textarea name="nextSteps" value={selectedLead.details?.nextSteps || ''} onChange={handleEditDetailsChange} rows="3" className="w-full p-3 border rounded-lg resize-y" ></textarea></div>
@@ -1902,11 +1955,12 @@ const KanbanBoard = ({
                               </button>
                           </div>
                       </div>
-                  </form>
-              </div>
-          </div>
+                </form>
+            </div>
+        </div>
       )}
       
+      {/* ... (outros modais inalterados: TagManager, SegmentManager, ManageColumns) ... */}
       <TagManagerModal 
         isOpen={isTagModalOpen}
         onClose={() => setIsTagModalOpen(false)}
@@ -1918,6 +1972,23 @@ const KanbanBoard = ({
         onClose={() => setIsSegmentModalOpen(false)} 
         companyId={companyId} 
       />
+       {isManageColumnsModalOpen && ( <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4"> <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg"> <h3 className="text-2xl font-bold text-gray-900 mb-6">Gerenciar Colunas do Kanban</h3> <div className="space-y-3 mb-6 max-h-60 overflow-y-auto p-1"> {editingColumns.map((col, index) => ( <div key={col.id || index} className="flex items-center space-x-2 bg-gray-50 p-2 rounded"> <input type="text" value={col.name} onChange={(e) => handleColumnNameChange(index, e.target.value)} className="flex-1 p-2 border rounded-lg" /> <select value={col.type || 'transit'} onChange={(e) => handleColumnTypeChange(index, e.target.value)} className="p-2 border rounded-lg bg-white"> {COLUMN_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)} </select> <button onClick={() => handleDeleteColumn(index)} className="text-red-500 hover:text-red-700 p-2 rounded-full"><Trash2 size={18} /></button> </div> ))} </div> <button onClick={handleAddNewColumn} className="w-full border-2 border-dashed border-gray-300 text-gray-500 p-3 rounded-lg hover:bg-gray-100 mb-6">Adicionar Nova Coluna</button> <div className="flex justify-end space-x-4"> <button type="button" onClick={() => setIsManageColumnsModalOpen(false)} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button> 
+      <button 
+        type="button" 
+        onClick={handleSaveChanges} 
+        className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 flex items-center justify-center w-44" // Largura fixa
+        disabled={isSubmitting}
+      >
+        {isSubmitting ? (
+          <>
+            <Loader2 className="h-5 w-5 animate-spin mr-2" />
+            Salvando...
+          </>
+        ) : (
+          'Salvar Alterações'
+        )}
+      </button>
+       </div> </div> </div> )}
     </div>
   );
 };
