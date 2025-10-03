@@ -369,24 +369,40 @@ app.post('/api/automations/execute', async (req, res) => {
     return res.status(401).send('Acesso não autorizado.');
   }
 
-  console.log('Iniciando execução das automações...');
+  console.log('[AUTOMATION] Iniciando execução das automações...');
   const companyId = '3bHx7UfBFve1907kwqqT'; // Fixo por enquanto
 
   try {
     const companyRef = db.collection('companies').doc(companyId);
+    // Referência para a nova coleção de logs
+    const automationLogsRef = companyRef.collection('automation_logs'); 
     
     const automationsRef = companyRef.collection('automations');
     const qAutomations = automationsRef.where('isActive', '==', true);
     const automationsSnapshot = await qAutomations.get();
 
     if (automationsSnapshot.empty) {
-      console.log('Nenhuma regra de automação ativa para executar.');
+      console.log('[AUTOMATION] Nenhuma regra de automação ativa para executar.');
       return res.status(200).send('Nenhuma regra de automação ativa encontrada.');
+    }
+
+    const companyData = (await companyRef.get()).data();
+    const { whatsappAccessToken: accessToken, whatsappPhoneNumberId: fromPhoneNumberId } = companyData;
+
+    if (!accessToken || !fromPhoneNumberId) {
+      console.error(`[AUTOMATION] Credenciais do WhatsApp não encontradas para a empresa ${companyId}. Abortando.`);
+      await automationLogsRef.add({
+        timestamp: new Date(),
+        ruleName: 'Verificação Geral',
+        status: 'Falha Crítica',
+        details: `As credenciais do WhatsApp não foram encontradas. A execução foi abortada.`
+      });
+      return res.status(500).send('Credenciais do WhatsApp não configuradas.');
     }
 
     for (const ruleDoc of automationsSnapshot.docs) {
       const rule = ruleDoc.data();
-      console.log(`Processando regra: "${rule.name}"`);
+      console.log(`[AUTOMATION] Processando regra: "${rule.name}"`);
 
       if (rule.triggerType === 'time_in_status') {
         const { columnName, days } = rule.triggerValue;
@@ -402,51 +418,64 @@ app.post('/api/automations/execute', async (req, res) => {
         const leadsSnapshot = await qLeads.get();
 
         if (leadsSnapshot.empty) {
-          console.log(`Nenhum lead encontrado para a regra "${rule.name}".`);
+          console.log(`[AUTOMATION] Nenhum lead encontrado para a regra "${rule.name}".`);
           continue;
         }
 
-        console.log(`${leadsSnapshot.size} leads encontrados para a regra "${rule.name}". Disparando ações...`);
+        console.log(`[AUTOMATION] ${leadsSnapshot.size} leads encontrados para a regra "${rule.name}". Disparando ações...`);
 
         for (const leadDoc of leadsSnapshot.docs) {
           const lead = leadDoc.data();
-        
-          if (!lead.phoneNumber) {
-            console.log(`Lead ${lead.name} (${leadDoc.id}) pulado: sem número de telefone.`);
-            continue; 
-          }
+          
+          try {
+            if (!lead.phoneNumber) {
+              // Lança um erro para ser pego pelo bloco catch e logado
+              throw new Error('Lead sem número de telefone.');
+            }
+  
+            const message = messageTemplate.replace(/\[Nome do Lead\]/g, lead.name);
+            
+            const url = `https://graph.facebook.com/v19.0/${fromPhoneNumberId}/messages`;
+            const data = {
+              messaging_product: 'whatsapp', to: lead.phoneNumber, type: 'text',
+              text: { preview_url: false, body: message },
+            };
+            const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
+            
+            await axios.post(url, data, { headers });
+            
+            // LOG DE SUCESSO
+            await automationLogsRef.add({
+              timestamp: new Date(),
+              ruleId: ruleDoc.id, ruleName: rule.name, leadId: leadDoc.id, leadName: lead.name,
+              status: 'Sucesso',
+              details: `Mensagem de automação enviada para ${lead.name} (${lead.phoneNumber}).`
+            });
+            console.log(`[AUTOMATION LOG] Sucesso: Mensagem enviada para ${lead.name}.`);
+            
+            // Atualiza o timestamp do lead para reiniciar a contagem de inatividade
+            await leadDoc.ref.update({ timestamp: new Date() });
 
-          const message = messageTemplate.replace(/\[Nome do Lead\]/g, lead.name);
-          const companyData = (await companyRef.get()).data();
-          const { whatsappAccessToken: accessToken, whatsappPhoneNumberId: fromPhoneNumberId } = companyData;
-          
-          if (!accessToken || !fromPhoneNumberId) {
-            console.error(`Credenciais do WhatsApp não encontradas para a empresa ${companyId}. Pulando ação.`);
-            continue;
+          } catch (error) {
+            // LOG DE FALHA
+            const errorMessage = error.response ? JSON.stringify(error.response.data) : error.message;
+            await automationLogsRef.add({
+              timestamp: new Date(),
+              ruleId: ruleDoc.id, ruleName: rule.name, leadId: leadDoc.id, leadName: lead.name || 'Nome não encontrado',
+              status: 'Falha',
+              details: `Erro ao processar ação: ${errorMessage}`
+            });
+            console.error(`[AUTOMATION LOG] Falha ao processar ${lead.name || leadDoc.id}: ${errorMessage}`);
           }
-
-          const url = `https://graph.facebook.com/v19.0/${fromPhoneNumberId}/messages`;
-          const data = {
-            messaging_product: 'whatsapp',
-            to: lead.phoneNumber,
-            type: 'text',
-            text: { preview_url: false, body: message },
-          };
-          const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
-          
-          await axios.post(url, data, { headers });
-          console.log(`Mensagem de automação enviada para ${lead.name} (${lead.phoneNumber}).`);
-          
-          await leadDoc.ref.update({ timestamp: new Date() });
         }
       }
     }
 
-    console.log('Execução das automações concluída.');
+    console.log('[AUTOMATION] Execução das automações concluída.');
     res.status(200).send('Automações executadas com sucesso.');
 
   } catch (error) {
-    console.error('Erro geral ao executar automações:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+    console.error('[AUTOMATION] Erro geral ao executar automações:', error);
     res.status(500).send('Erro no servidor ao executar automações.');
   }
 });
@@ -1019,65 +1048,6 @@ app.post('/api/perform-monthly-snapshot', async (req, res) => {
     res.status(500).send('Erro no servidor ao executar snapshot mensal.');
   }
 });
-
-// =================================================================================
-// --- ROTAS DE ADMINISTRAÇÃO E DEBUG (USO LOCAL) ---
-// =================================================================================
-
-/* app.post('/api/admin/delete-all-leads', async (req, res) => {
-  const { secret } = req.body;
-  if (secret !== process.env.CRON_JOB_SECRET) {
-    return res.status(401).send('Acesso não autorizado. Secret inválido.');
-  }
-
-  const companyId = '3bHx7UfBFve1907kwqqT';
-  console.log(`[ADMIN] Recebida requisição para limpeza total da empresa ${companyId}`);
-
-  try {
-    // --- PARTE 1: EXCLUIR LEADS ---
-    const leadsRef = db.collection('companies').doc(companyId).collection('leads');
-    const leadsSnapshot = await leadsRef.get();
-    let deletedLeadsCount = 0;
-
-    if (!leadsSnapshot.empty) {
-      for (const leadDoc of leadsSnapshot.docs) {
-        // Exclui a subcoleção de mensagens
-        const messagesRef = leadDoc.ref.collection('messages');
-        const messagesSnapshot = await messagesRef.get();
-        for (const messageDoc of messagesSnapshot.docs) {
-          await messageDoc.ref.delete();
-        }
-        // Exclui o lead
-        await leadDoc.ref.delete();
-        deletedLeadsCount++;
-      }
-    }
-    console.log(`[ADMIN] ${deletedLeadsCount} leads foram excluídos.`);
-
-    // --- PARTE 2: EXCLUIR INSIGHTS (NOVO BLOCO) ---
-    console.log('[ADMIN] Excluindo todos os insights existentes...');
-    const insightsRef = db.collection('companies').doc(companyId).collection('insights');
-    const insightsSnapshot = await insightsRef.get();
-    let deletedInsightsCount = 0;
-
-    if (!insightsSnapshot.empty) {
-      const batch = db.batch(); // Usar batch é mais eficiente para múltiplas exclusões
-      insightsSnapshot.docs.forEach(doc => batch.delete(doc.ref));
-      await batch.commit();
-      deletedInsightsCount = insightsSnapshot.size;
-    }
-    console.log(`[ADMIN] ${deletedInsightsCount} insights foram excluídos.`);
-    
-    // --- MENSAGEM FINAL ---
-    const successMessage = `[ADMIN] Limpeza concluída. ${deletedLeadsCount} leads e ${deletedInsightsCount} insights foram excluídos com sucesso.`;
-    console.log(successMessage);
-    res.status(200).json({ message: successMessage });
-
-  } catch (error) {
-    console.error('[ADMIN] Erro ao executar limpeza total:', error);
-    res.status(500).json({ error: 'Falha ao executar a limpeza.' });
-  }
-}); */
 
 // =================================================================================
 // --- INICIALIZAÇÃO DO SERVIDOR ---

@@ -783,12 +783,15 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }
   );
 };
 
+// App.js -> SUBSTITUA O COMPONENTE AutomationPage INTEIRO POR ESTE CÓDIGO COMPLETO
+
 const AutomationPage = ({ companyId, kanbanColumns }) => {
   const [automations, setAutomations] = useState([]);
+  const [logs, setLogs] = useState([]); // NOVO ESTADO PARA OS LOGS
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [wizardStep, setWizardStep] = useState(1); 
-  const [editingAutomation, setEditingAutomation] = useState(null); 
+  const [wizardStep, setWizardStep] = useState(1);
+  const [editingAutomation, setEditingAutomation] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     isActive: true,
@@ -798,14 +801,25 @@ const AutomationPage = ({ companyId, kanbanColumns }) => {
     actionValue: { message: '' }
   });
 
-  // Busca as regras de automação do Firestore
+  // Busca as regras de automação
   useEffect(() => {
     if (!companyId) return;
     const automationsRef = collection(db, "companies", companyId, "automations");
     const q = query(automationsRef, orderBy("name"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedAutomations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAutomations(fetchedAutomations);
+      setAutomations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, [companyId]);
+
+  // NOVO USEEFFECT PARA BUSCAR OS LOGS
+  useEffect(() => {
+    if (!companyId) return;
+    const logsRef = collection(db, "companies", companyId, "automation_logs");
+    // Pega os 50 logs mais recentes
+    const q = query(logsRef, orderBy("timestamp", "desc"), limit(50)); 
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
     return () => unsubscribe();
   }, [companyId]);
@@ -865,12 +879,10 @@ const AutomationPage = ({ companyId, kanbanColumns }) => {
     setIsSubmitting(true);
     try {
       if (editingAutomation) {
-        // Lógica de ATUALIZAÇÃO
         const ruleRef = doc(db, "companies", companyId, "automations", editingAutomation.id);
         await updateDoc(ruleRef, formData);
         toast.success("Regra atualizada com sucesso!");
       } else {
-        // Lógica de CRIAÇÃO
         const automationsRef = collection(db, "companies", companyId, "automations");
         await addDoc(automationsRef, formData);
         toast.success("Nova regra criada com sucesso!");
@@ -898,77 +910,97 @@ const AutomationPage = ({ companyId, kanbanColumns }) => {
   const goToPreviousStep = () => setWizardStep(wizardStep - 1);
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-shrink-0 mb-6">
+    <div className="flex flex-col h-full space-y-6">
+      <div>
         <h2 className="text-3xl font-bold text-gray-900">Automação de Follow-Up</h2>
         <p className="text-gray-600 mt-1">
-          Crie regras para automatizar tarefas repetitivas e garantir que nenhum lead seja esquecido.
+          Crie regras e monitore as execuções para garantir que nenhum lead seja esquecido.
         </p>
       </div>
-      <div className="bg-white p-6 rounded-xl shadow-lg flex-1 flex flex-col">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-semibold text-gray-800">Minhas Regras de Automação</h3>
-          <button onClick={openNewRuleModal} className="bg-indigo-600 text-white px-4 py-2 rounded-full hover:bg-indigo-700 transition-colors flex items-center">
-            <Plus className="h-5 w-5 mr-2" />
-            Criar Nova Regra
-          </button>
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 flex-1 min-h-0">
+        <div className="bg-white p-6 rounded-xl shadow-lg lg:col-span-3 flex flex-col">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-semibold text-gray-800">Minhas Regras de Automação</h3>
+            <button onClick={openNewRuleModal} className="bg-indigo-600 text-white px-4 py-2 rounded-full hover:bg-indigo-700 transition-colors flex items-center">
+              <Plus className="h-5 w-5 mr-2" />
+              Criar Nova Regra
+            </button>
+          </div>
+          <div className="space-y-4 overflow-y-auto">
+            {automations.length > 0 ? automations.map(auto => (
+              <div key={auto.id} className="bg-white border rounded-lg p-4 shadow-sm">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h4 className="font-bold text-lg text-gray-800">{auto.name}</h4>
+                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${auto.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700'}`}>
+                      {auto.isActive ? 'Ativa' : 'Inativa'}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button onClick={() => openEditModal(auto)} className="text-gray-500 hover:text-indigo-600"><Edit size={16}/></button>
+                    <button onClick={() => handleDelete(auto.id)} className="text-gray-500 hover:text-red-600"><Trash2 size={16}/></button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="flex-1 bg-gray-50 p-3 rounded-md">
+                    <div className="flex items-center text-sm font-semibold text-gray-500 mb-2">
+                      {auto.triggerType === 'time_in_status' ? <Clock size={16} className="mr-2"/> : <ChevronRight size={16} className="mr-2"/>}
+                      QUANDO
+                    </div>
+                    <div className="text-sm text-gray-800">
+                      {auto.triggerType === 'status_change' 
+                        ? <>O lead entrar em <strong className="font-semibold">"{auto.triggerValue.columnName}"</strong></> 
+                        : <>O lead permanecer por mais de <strong className="font-semibold">{auto.triggerValue.days} dias</strong> em <strong className="font-semibold">"{auto.triggerValue.columnName}"</strong></>
+                      }
+                    </div>
+                  </div>
+                  <div className="text-gray-300"><ChevronRight size={24} /></div>
+                  <div className="flex-1 bg-indigo-50 p-3 rounded-md">
+                    <div className="flex items-center text-sm font-semibold text-indigo-700 mb-2">
+                      <MessageSquare size={16} className="mr-2"/>
+                      ENTÃO
+                    </div>
+                    <div className="text-sm text-gray-800">
+                      Enviar a mensagem: <em className="italic">"{auto.actionValue.message}"</em>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )) : (
+              <div className="text-center py-16 border-2 border-dashed rounded-lg">
+                <p className="text-gray-500">Nenhuma regra de automação criada ainda.</p>
+                <p className="text-sm text-gray-400 mt-1">Clique em "Criar Nova Regra" para começar.</p>
+              </div>
+            )}
+          </div>
         </div>
         
-        {/* --- NOVO DESIGN DA LISTA DE REGRAS --- */}
-        <div className="space-y-4 overflow-y-auto">
-          {automations.length > 0 ? automations.map(auto => (
-            <div key={auto.id} className="bg-white border rounded-lg p-4 shadow-sm">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h4 className="font-bold text-lg text-gray-800">{auto.name}</h4>
-                  <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${auto.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700'}`}>
-                    {auto.isActive ? 'Ativa' : 'Inativa'}
+        <div className="bg-white p-6 rounded-xl shadow-lg lg:col-span-2 flex flex-col">
+          <h3 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Histórico de Execuções</h3>
+          <div className="space-y-3 overflow-y-auto">
+            {logs.length > 0 ? logs.map(log => (
+              <div key={log.id} className="text-sm border-b pb-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-gray-700">{log.ruleName}</span>
+                  <span className="text-xs text-gray-400">
+                    {log.timestamp ? format(log.timestamp.toDate(), 'dd/MM/yy HH:mm') : ''}
                   </span>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <button onClick={() => openEditModal(auto)} className="text-gray-500 hover:text-indigo-600"><Edit size={16}/></button>
-                  <button onClick={() => handleDelete(auto.id)} className="text-gray-500 hover:text-red-600"><Trash2 size={16}/></button>
+                <div className="flex items-center mt-1">
+                  {log.status === 'Sucesso' ? 
+                    <CheckCircle size={14} className="text-green-500 mr-2 flex-shrink-0" /> :
+                    <AlertCircle size={14} className="text-red-500 mr-2 flex-shrink-0" />
+                  }
+                  <p className="text-gray-600 truncate" title={log.details}>{log.details}</p>
                 </div>
               </div>
-
-              <div className="flex items-center gap-4">
-                {/* Gatilho */}
-                <div className="flex-1 bg-gray-50 p-3 rounded-md">
-                  <div className="flex items-center text-sm font-semibold text-gray-500 mb-2">
-                    {auto.triggerType === 'time_in_status' ? <Clock size={16} className="mr-2"/> : <ChevronRight size={16} className="mr-2"/>}
-                    QUANDO
-                  </div>
-                  <div className="text-sm text-gray-800">
-                    {auto.triggerType === 'status_change' 
-                      ? <>O lead entrar em <strong className="font-semibold">"{auto.triggerValue.columnName}"</strong></> 
-                      : <>O lead permanecer por mais de <strong className="font-semibold">{auto.triggerValue.days} dias</strong> em <strong className="font-semibold">"{auto.triggerValue.columnName}"</strong></>
-                    }
-                  </div>
-                </div>
-                
-                {/* Seta */}
-                <div className="text-gray-300">
-                  <ChevronRight size={24} />
-                </div>
-
-                {/* Ação */}
-                <div className="flex-1 bg-indigo-50 p-3 rounded-md">
-                  <div className="flex items-center text-sm font-semibold text-indigo-700 mb-2">
-                    <MessageSquare size={16} className="mr-2"/>
-                    ENTÃO
-                  </div>
-                  <div className="text-sm text-gray-800">
-                    Enviar a mensagem: <em className="italic">"{auto.actionValue.message}"</em>
-                  </div>
-                </div>
+            )) : (
+              <div className="text-center py-16">
+                <p className="text-gray-500">Nenhum registro de execução encontrado.</p>
+                <p className="text-sm text-gray-400 mt-1">As execuções aparecerão aqui assim que ocorrerem.</p>
               </div>
-            </div>
-          )) : (
-            <div className="text-center py-16 border-2 border-dashed rounded-lg">
-              <p className="text-gray-500">Nenhuma regra de automação criada ainda.</p>
-              <p className="text-sm text-gray-400 mt-1">Clique em "Criar Nova Regra" para começar.</p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
       
@@ -979,63 +1011,10 @@ const AutomationPage = ({ companyId, kanbanColumns }) => {
               <h2 className="text-2xl font-bold text-gray-800">{editingAutomation ? 'Editar Regra' : 'Criar Nova Regra'}</h2>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
             </div>
-            
             <form onSubmit={handleFormSubmit}>
-              {wizardStep === 1 && (
-                <div>
-                  <p className="text-lg font-semibold text-center mb-1 text-gray-700">Passo 1 de 3</p>
-                  <h3 className="text-2xl font-bold text-center mb-6 text-gray-900">Quando esta automação deve ser disparada?</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div onClick={() => handleTriggerSelect('status_change')} className="border-2 border-gray-200 rounded-lg p-6 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all"> <ChevronRight size={32} className="mx-auto mb-3 text-indigo-500"/> <h4 className="font-bold text-lg text-gray-800">Quando um Lead Mudar de Status</h4> <p className="text-sm text-gray-500 mt-1">Dispara uma ação no momento em que um card é movido para uma coluna específica.</p> </div>
-                    <div onClick={() => handleTriggerSelect('time_in_status')} className="border-2 border-gray-200 rounded-lg p-6 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all"> <Clock size={32} className="mx-auto mb-3 text-indigo-500"/> <h4 className="font-bold text-lg text-gray-800">Quando um Lead Ficar Inativo</h4> <p className="text-sm text-gray-500 mt-1">Dispara uma ação se um card permanecer parado em uma coluna por um tempo.</p> </div>
-                  </div>
-                </div>
-              )}
-
-              {wizardStep === 2 && (
-                <div>
-                  <p className="text-lg font-semibold text-center mb-1 text-gray-700">Passo 2 de 3</p>
-                  <h3 className="text-2xl font-bold text-center mb-6 text-gray-900">Configure a condição</h3>
-                  <div className="bg-gray-100 p-6 rounded-lg space-y-4">
-                    <label className="block text-base font-semibold text-gray-800">Configuração do Gatilho</label>
-                    {formData.triggerType === 'time_in_status' && ( <div className="flex items-center gap-4 flex-wrap"> <span>O lead permanecer por mais de</span> <input type="number" name="days" value={formData.triggerValue.days} onChange={handleTriggerValueChange} className="w-24 p-2 border rounded-lg" min="1"/> <span>dias na coluna:</span> </div> )}
-                    {formData.triggerType === 'status_change' && ( <div> <span>O lead entrar na coluna:</span> </div> )}
-                    <select name="columnName" value={formData.triggerValue.columnName} onChange={handleTriggerValueChange} className="w-full p-2 border rounded-lg bg-white mt-2">
-                      {kanbanColumns.map(col => <option key={col.id} value={col.name}>{col.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex justify-between mt-8">
-                    <button type="button" onClick={goToPreviousStep} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Voltar</button>
-                    <button type="button" onClick={goToNextStep} className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">Avançar</button>
-                  </div>
-                </div>
-              )}
-              
-              {wizardStep === 3 && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Nome da Regra</label>
-                    <input type="text" name="name" value={formData.name} onChange={handleFormChange} className="w-full p-2 border rounded mt-1" placeholder="Ex: Follow-up de boas-vindas" required/>
-                  </div>
-                  <div className="bg-gray-100 p-4 rounded-lg">
-                    <label className="block text-base font-semibold text-gray-800 mb-2">ENTÃO (Ação)</label>
-                    <select name="actionType" value={formData.actionType} onChange={handleFormChange} className="w-full p-2 border rounded bg-white mb-2">
-                      <option value="send_whatsapp">Enviar mensagem no WhatsApp</option>
-                    </select>
-                    <textarea name="message" value={formData.actionValue.message} onChange={handleActionValueChange} className="w-full p-2 border rounded" rows="4" placeholder="Digite a mensagem. Use [Nome do Lead] para personalizar." required></textarea>
-                  </div>
-                  <div className="flex items-center">
-                    <input type="checkbox" id="isActive" name="isActive" checked={formData.isActive} onChange={handleFormChange} className="h-4 w-4 text-indigo-600 border-gray-300 rounded"/>
-                    <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">Ativar esta regra</label>
-                  </div>
-                  <div className="flex justify-between items-center mt-6">
-                    <button type="button" onClick={goToPreviousStep} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Voltar</button>
-                    <button type="submit" className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 w-32 flex justify-center" disabled={isSubmitting}>
-                      {isSubmitting ? <Loader2 className="animate-spin" /> : 'Salvar Regra'}
-                    </button>
-                  </div>
-                </div>
-              )}
+              {wizardStep === 1 && ( <div> <p className="text-lg font-semibold text-center mb-1 text-gray-700">Passo 1 de 3</p> <h3 className="text-2xl font-bold text-center mb-6 text-gray-900">Quando esta automação deve ser disparada?</h3> <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> <div onClick={() => handleTriggerSelect('status_change')} className="border-2 border-gray-200 rounded-lg p-6 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all"> <ChevronRight size={32} className="mx-auto mb-3 text-indigo-500"/> <h4 className="font-bold text-lg text-gray-800">Quando um Lead Mudar de Status</h4> <p className="text-sm text-gray-500 mt-1">Dispara uma ação no momento em que um card é movido para uma coluna específica.</p> </div> <div onClick={() => handleTriggerSelect('time_in_status')} className="border-2 border-gray-200 rounded-lg p-6 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all"> <Clock size={32} className="mx-auto mb-3 text-indigo-500"/> <h4 className="font-bold text-lg text-gray-800">Quando um Lead Ficar Inativo</h4> <p className="text-sm text-gray-500 mt-1">Dispara uma ação se um card permanecer parado em uma coluna por um tempo.</p> </div> </div> </div> )}
+              {wizardStep === 2 && ( <div> <p className="text-lg font-semibold text-center mb-1 text-gray-700">Passo 2 de 3</p> <h3 className="text-2xl font-bold text-center mb-6 text-gray-900">Configure a condição</h3> <div className="bg-gray-100 p-6 rounded-lg space-y-4"> <label className="block text-base font-semibold text-gray-800">Configuração do Gatilho</label> {formData.triggerType === 'time_in_status' && ( <div className="flex items-center gap-4 flex-wrap"> <span>O lead permanecer por mais de</span> <input type="number" name="days" value={formData.triggerValue.days} onChange={handleTriggerValueChange} className="w-24 p-2 border rounded-lg" min="1"/> <span>dias na coluna:</span> </div> )} {formData.triggerType === 'status_change' && ( <div> <span>O lead entrar na coluna:</span> </div> )} <select name="columnName" value={formData.triggerValue.columnName} onChange={handleTriggerValueChange} className="w-full p-2 border rounded-lg bg-white mt-2"> {kanbanColumns.map(col => <option key={col.id} value={col.name}>{col.name}</option>)} </select> </div> <div className="flex justify-between mt-8"> <button type="button" onClick={goToPreviousStep} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Voltar</button> <button type="button" onClick={goToNextStep} className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">Avançar</button> </div> </div> )}
+              {wizardStep === 3 && ( <div className="space-y-4"> <div> <label className="block text-sm font-medium text-gray-700">Nome da Regra</label> <input type="text" name="name" value={formData.name} onChange={handleFormChange} className="w-full p-2 border rounded mt-1" placeholder="Ex: Follow-up de boas-vindas" required/> </div> <div className="bg-gray-100 p-4 rounded-lg"> <label className="block text-base font-semibold text-gray-800 mb-2">ENTÃO (Ação)</label> <select name="actionType" value={formData.actionType} onChange={handleFormChange} className="w-full p-2 border rounded bg-white mb-2"> <option value="send_whatsapp">Enviar mensagem no WhatsApp</option> </select> <textarea name="message" value={formData.actionValue.message} onChange={handleActionValueChange} className="w-full p-2 border rounded" rows="4" placeholder="Digite a mensagem. Use [Nome do Lead] para personalizar." required></textarea> </div> <div className="flex items-center"> <input type="checkbox" id="isActive" name="isActive" checked={formData.isActive} onChange={handleFormChange} className="h-4 w-4 text-indigo-600 border-gray-300 rounded"/> <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">Ativar esta regra</label> </div> <div className="flex justify-between items-center mt-6"> <button type="button" onClick={goToPreviousStep} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Voltar</button> <button type="submit" className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 w-32 flex justify-center" disabled={isSubmitting}> {isSubmitting ? <Loader2 className="animate-spin" /> : 'Salvar Regra'} </button> </div> </div> )}
             </form>
           </div>
         </div>
