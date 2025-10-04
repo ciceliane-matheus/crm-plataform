@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, createContext, useContext } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import {
   Sparkles,
@@ -35,7 +35,9 @@ import {
   Settings,
   ArchiveRestore,
   Search,
-  Calculator
+  Calculator,
+  Sun,
+  Moon
 } from 'lucide-react';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
@@ -117,7 +119,60 @@ const COLUMN_TYPES = [
   { value: 'negative_conclusion', label: 'Conclusão Negativa' },
 ];
 
+const ThemeContext = createContext();
+const ThemeProvider = ({ children }) => {
+  const [theme, setTheme] = useState(() => {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('theme')) {
+      return localStorage.getItem('theme');
+    }
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+    return 'light';
+  });
+
+  const ThemeToggle = () => {
+  const { theme, setTheme } = useContext(ThemeContext);
+  const isDark = theme === 'dark';
+
+  return (
+    <button
+      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      aria-label="Alternar tema"
+      className="p-2 rounded-md transition-shadow shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-gray-700"
+      title={isDark ? 'Mudar para claro' : 'Mudar para escuro'}
+    >
+      {isDark ? <Sun className="h-5 w-5 text-yellow-300" /> : <Moon className="h-5 w-5 text-gray-600" />}
+    </button>
+  );
+};
+
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+};
+
 export default function App() {
+  return (
+    <ThemeProvider>
+      <MainApp />
+    </ThemeProvider>
+  );
+}
+
+function MainApp() { 
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [leads, setLeads] = useState([]);
@@ -255,7 +310,8 @@ export default function App() {
     { id: 'whatsapp', name: 'WhatsApp', icon: MessageSquare }, // Nova página adicionada
     { id: 'analise', name: 'Análise de Conversas', icon: TrendingUp },
     { id: 'calculator', name: 'Calculadora de Vendas', icon: Calculator },
-    { id: 'reports', name: 'Gerar Relatórios', icon: FileText }
+    { id: 'reports', name: 'Gerar Relatórios', icon: FileText },
+    { id: 'settings', name: 'Configurações', icon: Settings }
   ];
 
   const Sidebar = () => (
@@ -495,8 +551,10 @@ export default function App() {
         return <ReportsPage kanbanColumns={kanbanColumns} tags={tags} segments={segments} leads={leads} />;
       default:
         return <Dashboard leads={leads} />;
-      case 'calculator': // <-- NOVO CASE
+      case 'calculator':
         return <CalculatorPage companyId={companyId} leads={leads} />;
+      case 'settings':
+        return <SettingsPage />;
     }
   };
   
@@ -514,7 +572,7 @@ export default function App() {
 
   const LogoutConfirmationModal = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-sm text-center">
+      <div className="dark:bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-sm text-center">
         <h2 className="text-xl font-bold text-gray-800 mb-4">Confirmar Saída</h2>
         <p className="text-gray-600 mb-6">Você tem certeza que deseja sair da plataforma?</p>
         <div className="flex justify-center gap-4">
@@ -544,7 +602,7 @@ export default function App() {
   );
 
   return (
-    <div className="flex bg-gray-100 min-h-screen font-sans">
+    <div className="flex bg-gray-100 dark:bg-gray-900 min-h-screen font-sans">
       <Toaster position="top-right" />
       {isLogoutModalOpen && <LogoutConfirmationModal />}
       <Sidebar />
@@ -552,7 +610,7 @@ export default function App() {
 
       {/* Este container precisa ser 'flex-col' para o 'flex-1' do <main> funcionar */}
       <div className="flex-1 flex flex-col md:ml-64 min-w-0 min-h-0">
-        <header className="bg-white shadow-md p-4 md:hidden flex justify-between items-center sticky top-0 z-40">
+        <header className="dark:bg-gray-800 shadow-md p-4 md:hidden flex justify-between items-center sticky top-0 z-40">
           <button onClick={() => setIsMobileMenuOpen(true)} className="text-gray-600">
             <Menu className="h-6 w-6" />
           </button>
@@ -569,8 +627,6 @@ export default function App() {
     </div>
   );
 }
-
-// App.js -> SUBSTITUA O COMPONENTE DASHBOARD INTEIRO POR ESTE CÓDIGO
 
 const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }) => {
   const [historicalMonthlyData, setHistoricalMonthlyData] = useState([]);
@@ -704,13 +760,13 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }
   return (
     <div className="flex flex-col h-full space-y-6">
       <div className="flex-shrink-0 flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Dashboard de Performance</h2>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard de Performance</h2>
         <div className="flex items-center gap-2">
           <label htmlFor="year-select" className="text-sm font-semibold text-gray-700">Ano:</label>
-          <select id="year-select" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="p-2 border rounded-lg bg-white shadow-sm text-sm">
+          <select id="year-select" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} lassName="p-2 border rounded-lg dark:bg-gray-800 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 shadow-sm text-sm">
             {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
           </select>
-        </div>
+        </div> 
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white p-4 rounded-xl shadow-lg flex flex-col justify-center">
@@ -726,7 +782,7 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }
             </div>
           </div>
         </div>
-        <div className="bg-white p-4 rounded-xl shadow-lg lg:col-span-2">
+        <div className="dark:bg-gray-800 dark:bg-gray-800 p-4 rounded-xl shadow-lg lg:col-span-2">
           <h3 className="font-bold text-sm text-gray-700 mb-2">Funil de Vendas (Últimos 7 dias)</h3>
           <div className="flex items-center justify-between text-center">
             <div className="w-1/3"><p className="text-2xl font-bold text-gray-800">{dashboardData.funnelData.new}</p><p className="text-xs font-semibold text-gray-500">Novos Leads</p></div>
@@ -738,7 +794,7 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }
         </div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white p-4 rounded-xl shadow-lg lg:col-span-2 h-72 flex flex-col">
+        <div className="dark:bg-gray-800 p-4 rounded-xl shadow-lg lg:col-span-2 h-72 flex flex-col">
           <h3 className="text-base font-semibold text-gray-800 mb-2">Captados vs. Qualificados ({selectedYear})</h3>
           <div className="flex-grow">
             <ResponsiveContainer width="100%" height="100%">
@@ -750,7 +806,7 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }
             </ResponsiveContainer>
           </div>
         </div>
-        <div className="bg-white p-4 rounded-xl shadow-lg flex flex-col">
+        <div className="dark:bg-gray-800 p-4 rounded-xl shadow-lg flex flex-col">
           <h3 className="font-bold text-sm text-gray-700 mb-3">Ranking de Corretores (Mês)</h3>
           {dashboardData.rankingData.length > 0 ? (
             <div className="space-y-3 flex-grow">
@@ -770,11 +826,11 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }
         </div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="bg-white p-4 rounded-xl shadow-lg border-l-4 border-purple-500 lg:col-span-2">
+        <div className="dark:bg-gray-800 p-4 rounded-xl shadow-lg border-l-4 border-purple-500 lg:col-span-2">
            <h3 className="font-bold text-sm text-gray-700 mb-2 flex items-center"><Sparkles size={16} className="mr-2 text-purple-500"/> Insights da Semana</h3>
            {aiInsight.loading ? ( <div className="flex items-center text-sm text-gray-500"><Loader2 className="animate-spin mr-2" size={16} /> Carregando insights...</div>) : aiInsight.data && aiInsight.data.insights ? ( <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">{aiInsight.data.insights.map((insight, index) => (<li key={index}>{insight}</li>))}</ul>) : ( <p className="text-sm text-gray-500 text-center py-2">Nenhum insight disponível. Acione o robô de análise para gerar.</p>)}
         </div>
-        <div className="bg-white p-4 rounded-xl shadow-lg flex flex-col">
+        <div className="dark:bg-gray-800 p-4 rounded-xl shadow-lg flex flex-col">
           <h3 className="font-bold text-sm text-gray-700 mb-3">Atividades Recentes</h3>
           <div className="space-y-3 overflow-y-auto flex-1">{dashboardData.recentActivities.map(lead => ( <div key={lead.id} className="flex items-start"><div className="mt-1 mr-3 flex-shrink-0">{renderActivityIcon(lead)}</div><div><p className="text-xs font-semibold text-gray-800">{lead.name}</p><p className="text-xs text-gray-500">{generateActivityText(lead)}</p></div></div>))}</div>
         </div>
@@ -782,8 +838,6 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }
     </div>
   );
 };
-
-// App.js -> SUBSTITUA O COMPONENTE AutomationPage INTEIRO POR ESTE CÓDIGO COMPLETO
 
 const AutomationPage = ({ companyId, kanbanColumns }) => {
   const [automations, setAutomations] = useState([]);
@@ -918,7 +972,7 @@ const AutomationPage = ({ companyId, kanbanColumns }) => {
         </p>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 flex-1 min-h-0">
-        <div className="bg-white p-6 rounded-xl shadow-lg lg:col-span-3 flex flex-col">
+        <div className="dark:bg-gray-800 p-6 rounded-xl shadow-lg lg:col-span-3 flex flex-col">
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-xl font-semibold text-gray-800">Minhas Regras de Automação</h3>
             <button onClick={openNewRuleModal} className="bg-indigo-600 text-white px-4 py-2 rounded-full hover:bg-indigo-700 transition-colors flex items-center">
@@ -928,7 +982,7 @@ const AutomationPage = ({ companyId, kanbanColumns }) => {
           </div>
           <div className="space-y-4 overflow-y-auto">
             {automations.length > 0 ? automations.map(auto => (
-              <div key={auto.id} className="bg-white border rounded-lg p-4 shadow-sm">
+              <div key={auto.id} className="dark:bg-gray-800 border rounded-lg p-4 shadow-sm">
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h4 className="font-bold text-lg text-gray-800">{auto.name}</h4>
@@ -975,7 +1029,7 @@ const AutomationPage = ({ companyId, kanbanColumns }) => {
           </div>
         </div>
         
-        <div className="bg-white p-6 rounded-xl shadow-lg lg:col-span-2 flex flex-col">
+        <div className="dark:bg-gray-800 p-6 rounded-xl shadow-lg lg:col-span-2 flex flex-col">
           <h3 className="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Histórico de Execuções</h3>
           <div className="space-y-3 overflow-y-auto">
             {logs.length > 0 ? logs.map(log => (
@@ -1006,15 +1060,15 @@ const AutomationPage = ({ companyId, kanbanColumns }) => {
       
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl">
+          <div className="dark:bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-2xl">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-gray-800">{editingAutomation ? 'Editar Regra' : 'Criar Nova Regra'}</h2>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600"><X size={24}/></button>
             </div>
             <form onSubmit={handleFormSubmit}>
               {wizardStep === 1 && ( <div> <p className="text-lg font-semibold text-center mb-1 text-gray-700">Passo 1 de 3</p> <h3 className="text-2xl font-bold text-center mb-6 text-gray-900">Quando esta automação deve ser disparada?</h3> <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> <div onClick={() => handleTriggerSelect('status_change')} className="border-2 border-gray-200 rounded-lg p-6 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all"> <ChevronRight size={32} className="mx-auto mb-3 text-indigo-500"/> <h4 className="font-bold text-lg text-gray-800">Quando um Lead Mudar de Status</h4> <p className="text-sm text-gray-500 mt-1">Dispara uma ação no momento em que um card é movido para uma coluna específica.</p> </div> <div onClick={() => handleTriggerSelect('time_in_status')} className="border-2 border-gray-200 rounded-lg p-6 text-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all"> <Clock size={32} className="mx-auto mb-3 text-indigo-500"/> <h4 className="font-bold text-lg text-gray-800">Quando um Lead Ficar Inativo</h4> <p className="text-sm text-gray-500 mt-1">Dispara uma ação se um card permanecer parado em uma coluna por um tempo.</p> </div> </div> </div> )}
-              {wizardStep === 2 && ( <div> <p className="text-lg font-semibold text-center mb-1 text-gray-700">Passo 2 de 3</p> <h3 className="text-2xl font-bold text-center mb-6 text-gray-900">Configure a condição</h3> <div className="bg-gray-100 p-6 rounded-lg space-y-4"> <label className="block text-base font-semibold text-gray-800">Configuração do Gatilho</label> {formData.triggerType === 'time_in_status' && ( <div className="flex items-center gap-4 flex-wrap"> <span>O lead permanecer por mais de</span> <input type="number" name="days" value={formData.triggerValue.days} onChange={handleTriggerValueChange} className="w-24 p-2 border rounded-lg" min="1"/> <span>dias na coluna:</span> </div> )} {formData.triggerType === 'status_change' && ( <div> <span>O lead entrar na coluna:</span> </div> )} <select name="columnName" value={formData.triggerValue.columnName} onChange={handleTriggerValueChange} className="w-full p-2 border rounded-lg bg-white mt-2"> {kanbanColumns.map(col => <option key={col.id} value={col.name}>{col.name}</option>)} </select> </div> <div className="flex justify-between mt-8"> <button type="button" onClick={goToPreviousStep} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Voltar</button> <button type="button" onClick={goToNextStep} className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">Avançar</button> </div> </div> )}
-              {wizardStep === 3 && ( <div className="space-y-4"> <div> <label className="block text-sm font-medium text-gray-700">Nome da Regra</label> <input type="text" name="name" value={formData.name} onChange={handleFormChange} className="w-full p-2 border rounded mt-1" placeholder="Ex: Follow-up de boas-vindas" required/> </div> <div className="bg-gray-100 p-4 rounded-lg"> <label className="block text-base font-semibold text-gray-800 mb-2">ENTÃO (Ação)</label> <select name="actionType" value={formData.actionType} onChange={handleFormChange} className="w-full p-2 border rounded bg-white mb-2"> <option value="send_whatsapp">Enviar mensagem no WhatsApp</option> </select> <textarea name="message" value={formData.actionValue.message} onChange={handleActionValueChange} className="w-full p-2 border rounded" rows="4" placeholder="Digite a mensagem. Use [Nome do Lead] para personalizar." required></textarea> </div> <div className="flex items-center"> <input type="checkbox" id="isActive" name="isActive" checked={formData.isActive} onChange={handleFormChange} className="h-4 w-4 text-indigo-600 border-gray-300 rounded"/> <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">Ativar esta regra</label> </div> <div className="flex justify-between items-center mt-6"> <button type="button" onClick={goToPreviousStep} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Voltar</button> <button type="submit" className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 w-32 flex justify-center" disabled={isSubmitting}> {isSubmitting ? <Loader2 className="animate-spin" /> : 'Salvar Regra'} </button> </div> </div> )}
+              {wizardStep === 2 && ( <div> <p className="text-lg font-semibold text-center mb-1 text-gray-700">Passo 2 de 3</p> <h3 className="text-2xl font-bold text-center mb-6 text-gray-900">Configure a condição</h3> <div className="bg-gray-100 p-6 rounded-lg space-y-4"> <label className="block text-base font-semibold text-gray-800">Configuração do Gatilho</label> {formData.triggerType === 'time_in_status' && ( <div className="flex items-center gap-4 flex-wrap"> <span>O lead permanecer por mais de</span> <input type="number" name="days" value={formData.triggerValue.days} onChange={handleTriggerValueChange} className="w-24 p-2 border rounded-lg" min="1"/> <span>dias na coluna:</span> </div> )} {formData.triggerType === 'status_change' && ( <div> <span>O lead entrar na coluna:</span> </div> )} <select name="columnName" value={formData.triggerValue.columnName} onChange={handleTriggerValueChange} className="w-full p-2 border rounded-lg dark:bg-gray-800 mt-2"> {kanbanColumns.map(col => <option key={col.id} value={col.name}>{col.name}</option>)} </select> </div> <div className="flex justify-between mt-8"> <button type="button" onClick={goToPreviousStep} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Voltar</button> <button type="button" onClick={goToNextStep} className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">Avançar</button> </div> </div> )}
+              {wizardStep === 3 && ( <div className="space-y-4"> <div> <label className="block text-sm font-medium text-gray-700">Nome da Regra</label> <input type="text" name="name" value={formData.name} onChange={handleFormChange} className="w-full p-2 border rounded mt-1" placeholder="Ex: Follow-up de boas-vindas" required/> </div> <div className="bg-gray-100 p-4 rounded-lg"> <label className="block text-base font-semibold text-gray-800 mb-2">ENTÃO (Ação)</label> <select name="actionType" value={formData.actionType} onChange={handleFormChange} className="w-full p-2 border rounded dark:bg-gray-800 mb-2"> <option value="send_whatsapp">Enviar mensagem no WhatsApp</option> </select> <textarea name="message" value={formData.actionValue.message} onChange={handleActionValueChange} className="w-full p-2 border rounded" rows="4" placeholder="Digite a mensagem. Use [Nome do Lead] para personalizar." required></textarea> </div> <div className="flex items-center"> <input type="checkbox" id="isActive" name="isActive" checked={formData.isActive} onChange={handleFormChange} className="h-4 w-4 text-indigo-600 border-gray-300 rounded"/> <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">Ativar esta regra</label> </div> <div className="flex justify-between items-center mt-6"> <button type="button" onClick={goToPreviousStep} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Voltar</button> <button type="submit" className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 w-32 flex justify-center" disabled={isSubmitting}> {isSubmitting ? <Loader2 className="animate-spin" /> : 'Salvar Regra'} </button> </div> </div> )}
             </form>
           </div>
         </div>
@@ -1069,7 +1123,7 @@ const AnalysisPage = () => {
       <p className="text-gray-600 mb-6">
         Utilize a IA para analisar o conteúdo de conversas e obter insights valiosos sobre seus clientes.
       </p>
-      <div className="bg-white p-6 rounded-xl shadow-lg">
+      <div className="dark:bg-gray-800 p-6 rounded-xl shadow-lg">
         <h3 className="text-xl font-semibold mb-4">Cole o texto da conversa aqui:</h3>
         <textarea
           className="w-full p-4 rounded-lg border border-gray-300 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500 mb-4"
@@ -1265,37 +1319,37 @@ const ReportsPage = ({ leads, kanbanColumns, tags, segments }) => {
     <div className="flex flex-col h-full">
       <h2 className="text-3xl font-bold text-gray-900 mb-2 flex-shrink-0">Gerar Relatórios</h2>
       <p className="text-gray-600 mb-6 flex-shrink-0">Filtre e exporte dados detalhados dos seus leads para análises personalizadas.</p>
-      <div className="bg-white p-6 rounded-xl shadow-lg mb-6 flex-shrink-0">
+      <div className="dark:bg-gray-800 p-6 rounded-xl shadow-lg mb-6 flex-shrink-0">
         <h3 className="text-xl font-semibold mb-4">Filtros de Relatório</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select name="status" value={filters.status} onChange={handleFilterChange} className="w-full p-3 border rounded-lg bg-white">
+            <select name="status" value={filters.status} onChange={handleFilterChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:bg-gray-800">
               <option value="">Todos</option>
               {kanbanColumns.map(column => <option key={column.id} value={column.name}>{column.name}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Segmento</label>
-            <select name="businessSegment" value={filters.businessSegment} onChange={handleFilterChange} className="w-full p-3 border rounded-lg bg-white">
+            <select name="businessSegment" value={filters.businessSegment} onChange={handleFilterChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:bg-gray-800">
               <option value="">Todos</option>
               {segments.map(seg => <option key={seg.id} value={seg.name}>{seg.name}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
-            <select name="tag" value={filters.tag} onChange={handleFilterChange} className="w-full p-3 border rounded-lg bg-white">
+            <select name="tag" value={filters.tag} onChange={handleFilterChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:bg-gray-800">
               <option value="">Todas</option>
               {tags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">De</label>
-            <input type="date" name="de" value={filters.de} onChange={handleFilterChange} className="w-full p-3 border rounded-lg" />
+            <input type="date" name="de" value={filters.de} onChange={handleFilterChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Até</label>
-            <input type="date" name="ate" value={filters.ate} onChange={handleFilterChange} className="w-full p-3 border rounded-lg" />
+            <input type="date" name="ate" value={filters.ate} onChange={handleFilterChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
           </div>
         </div>
         {error && (
@@ -1312,13 +1366,13 @@ const ReportsPage = ({ leads, kanbanColumns, tags, segments }) => {
       
       {isFiltering ? (
         // Estado de Carregamento
-        <div className="bg-white p-6 rounded-xl shadow-lg flex-1 flex flex-col min-h-0 items-center justify-center text-gray-500">
+        <div className="dark:bg-gray-800 p-6 rounded-xl shadow-lg flex-1 flex flex-col min-h-0 items-center justify-center text-gray-500">
           <Loader2 className="h-10 w-10 animate-spin text-indigo-500 mb-4" />
           <p className="font-semibold text-lg">Filtrando dados...</p>
         </div>
       ) : hasFiltered && (
         // Estado com Resultados
-        <div className="bg-white p-6 rounded-xl shadow-lg flex-1 flex flex-col min-h-0">
+        <div className="dark:bg-gray-800 p-6 rounded-xl shadow-lg flex-1 flex flex-col min-h-0">
           <div className="flex justify-between items-center mb-4 flex-shrink-0">
             <div>
               <h3 className="text-xl font-semibold text-gray-800">Resultados ({allFilteredLeads.length} leads encontrados)</h3>
@@ -1349,7 +1403,7 @@ const ReportsPage = ({ leads, kanbanColumns, tags, segments }) => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data de Criação</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="dark:bg-gray-800 divide-y divide-gray-200">
                 {displayLeads.map((lead) => (
                   <tr key={lead.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{lead.name || 'null'}</td>
@@ -1454,8 +1508,8 @@ const TagManagerModal = ({ isOpen, onClose, tags, companyId }) => {
 
   return (
     <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
-        <h3 className="text-2xl font-bold text-gray-900 mb-6">Gerenciar Tags</h3>
+      <div className="dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md">
+        <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Gerenciar Tags</h3>
         <div className="space-y-2 mb-6 max-h-60 overflow-y-auto p-1">
           {tags.length > 0 ? tags.map(tag => (
             <div key={tag.id} className="flex items-center justify-between bg-gray-100 p-2 rounded-lg">
@@ -1474,7 +1528,7 @@ const TagManagerModal = ({ isOpen, onClose, tags, companyId }) => {
         <form onSubmit={handleFormSubmit}>
           <h4 className="font-semibold mb-2">{editingTag ? 'Editando Tag' : 'Adicionar Nova Tag'}</h4>
           <div className="flex items-center space-x-2">
-            <input type="color" value={newTagColor} onChange={(e) => setNewTagColor(e.target.value)} className="p-1 h-10 w-12 block bg-white border border-gray-300 cursor-pointer rounded-lg" />
+            <input type="color" value={newTagColor} onChange={(e) => setNewTagColor(e.target.value)} className="p-1 h-10 w-12 block dark:bg-gray-800 border border-gray-300 cursor-pointer rounded-lg" />
             <input type="text" placeholder="Nome da tag" value={newTagName} onChange={(e) => setNewTagName(e.target.value)} className="flex-1 p-2 border rounded-lg" required />
             <button type="submit" className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 w-28 flex justify-center" disabled={isSubmitting}>
               {isSubmitting ? <Loader2 className="animate-spin" size={20}/> : (editingTag ? 'Salvar' : 'Adicionar')}
@@ -1562,8 +1616,8 @@ const SegmentManagerModal = ({ isOpen, onClose, companyId }) => {
 
   return (
     <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
-        <h3 className="text-2xl font-bold text-gray-900 mb-6">Gerenciar Segmentos</h3>
+      <div className="dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md">
+        <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Gerenciar Segmentos</h3>
         <div className="space-y-2 mb-6 max-h-60 overflow-y-auto p-1">
           {segments.map(seg => (
             <div key={seg.id} className="flex items-center justify-between bg-gray-100 p-2 rounded-lg">
@@ -1590,8 +1644,6 @@ const SegmentManagerModal = ({ isOpen, onClose, companyId }) => {
   );
 };
 
-// App.js -> Substitua o componente KanbanBoard inteiro por este
-
 const KanbanBoard = ({ 
   kanbanColumns, 
   tags,
@@ -1606,7 +1658,7 @@ const KanbanBoard = ({
   setIsEditModalOpen, 
   selectedLead, 
   setSelectedLead,
-  companyUsers // <-- RECEBENDO A NOVA PROP
+  companyUsers
 }) => {
   const [viewMode, setViewMode] = useState('active');
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
@@ -1706,7 +1758,7 @@ const KanbanBoard = ({
 
   const handleArchiveFromEditModal = () => { if (selectedLead && window.confirm('Tem certeza que deseja arquivar este lead?')) { onArchiveLead(selectedLead.id); setIsEditModalOpen(false); setSelectedLead(null); } };
   const handleTagClick = (tagId) => { const isEditing = !!selectedLead; const currentLead = isEditing ? selectedLead : newLead; const updateFunction = isEditing ? setSelectedLead : setNewLead; const currentTags = currentLead.tags || []; let updatedTags; if (currentTags.includes(tagId)) { updatedTags = currentTags.filter(id => id !== tagId); } else { updatedTags = [...currentTags, tagId]; } updateFunction(prev => ({ ...prev, tags: updatedTags })); };
-  const TagSelector = ({ lead }) => ( <div className="mt-4"> <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label> <div className="flex flex-wrap gap-2 p-2 border rounded-lg bg-gray-50"> {tags.length > 0 ? tags.map(tag => { const isSelected = lead?.tags?.includes(tag.id); return ( <button key={tag.id} type="button" onClick={() => handleTagClick(tag.id)} className={`px-3 py-1 text-sm rounded-full transition-all duration-150 border ${ isSelected ? 'text-white shadow-md' : 'text-gray-700 bg-white hover:bg-gray-200' }`} style={{ backgroundColor: isSelected ? tag.color : '#FFFFFF', borderColor: isSelected ? tag.color : '#D1D5DB' }} > {tag.name} </button> ) }) : <p className="text-xs text-gray-500">Nenhuma tag criada.</p>} </div> </div> );
+  const TagSelector = ({ lead }) => ( <div className="mt-4"> <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label> <div className="flex flex-wrap gap-2 p-2 border rounded-lg bg-gray-50"> {tags.length > 0 ? tags.map(tag => { const isSelected = lead?.tags?.includes(tag.id); return ( <button key={tag.id} type="button" onClick={() => handleTagClick(tag.id)} className={`px-3 py-1 text-sm rounded-full transition-all duration-150 border ${ isSelected ? 'text-white shadow-md' : 'text-gray-700 dark:bg-gray-800 hover:bg-gray-200' }`} style={{ backgroundColor: isSelected ? tag.color : '#FFFFFF', borderColor: isSelected ? tag.color : '#D1D5DB' }} > {tag.name} </button> ) }) : <p className="text-xs text-gray-500">Nenhuma tag criada.</p>} </div> </div> );
 
   const handleRestoreClick = (leadId) => {
     if (window.confirm('Tem certeza que deseja restaurar este lead? Ele voltará para o início do seu funil.')) {
@@ -1716,10 +1768,10 @@ const KanbanBoard = ({
 
   // O JSX principal do KanbanBoard permanece o mesmo...
   return (
-    <div className="p-4 md:p-8 flex flex-col h-full">
+    <div className="p-4 md:p-8 flex flex-col h-full text-gray-900 dark:text-gray-100">
       {/* ... (cabeçalho do kanban inalterado) ... */}
       <div className="flex justify-between items-center mb-6 flex-shrink-0">
-        <h2 className="text-3xl font-bold text-gray-900">
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
           {viewMode === 'active' ? 'Qualificação de Leads' : 'Leads Arquivados'}
         </h2>
         <div className="flex items-center gap-2">
@@ -1734,7 +1786,7 @@ const KanbanBoard = ({
                Configurações
              </button>
              {isSettingsMenuOpen && (
-               <div className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg z-20 border">
+               <div className="absolute right-0 mt-2 w-56 dark:bg-gray-800 rounded-md shadow-lg z-20 border">
                  <button onClick={() => {setIsSegmentModalOpen(true); setIsSettingsMenuOpen(false);}} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"><Settings size={16} className="mr-2"/>Gerenciar Segmentos</button>
                  <button onClick={() => {setIsTagModalOpen(true); setIsSettingsMenuOpen(false);}} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"><Tag size={16} className="mr-2"/>Gerenciar Tags</button>
                  <button onClick={() => {openManageColumnsModal(); setIsSettingsMenuOpen(false);}} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"><List size={16} className="mr-2"/>Gerenciar Colunas</button>
@@ -1750,11 +1802,11 @@ const KanbanBoard = ({
           <div className="flex space-x-4 pb-4 h-full min-w-max">
             {viewMode === 'active' ? (
               kanbanColumns.map(column => (
-                <div key={column.id} onDrop={(e) => handleDrop(e, column.name)} onDragOver={handleDragOver} className="flex-shrink-0 w-80 bg-gray-200 p-4 rounded-xl shadow-inner flex flex-col">
+                <div key={column.id} onDrop={(e) => handleDrop(e, column.name)} onDragOver={handleDragOver} className="flex-shrink-0 w-80 bg-gray-200 dark:bg-gray-800 p-4 rounded-xl shadow-inner flex flex-col">
                   <h3 className="text-sm font-semibold p-2 rounded-lg text-center mb-4 flex-shrink-0">{column.name} ({getLeadsByStatus(column.name).length})</h3>
                   <div className="space-y-4 overflow-y-auto flex-grow pr-1 max-h-[calc(100vh-280px)]">
                     {getLeadsByStatus(column.name).map(lead => (
-                      <div key={lead.id} onClick={() => openEditModal(lead)} draggable onDragStart={(e) => handleDragStart(e, lead.id, column.name)} className="bg-white p-4 rounded-lg shadow-md cursor-pointer active:cursor-grabbing hover:scale-[1.02]">
+                      <div key={lead.id} onClick={() => openEditModal(lead)} draggable onDragStart={(e) => handleDragStart(e, lead.id, column.name)} className="dark:bg-gray-800 dark:bg-gray-700 p-4 rounded-lg shadow-md cursor-pointer active:cursor-grabbing hover:scale-[1.02]">
                         <h4 className="font-semibold text-indigo-700 text-sm truncate mb-2">{lead.interestSummary || 'Lead sem título'}</h4>
                         <p className="font-bold text-gray-800 truncate mb-2">{lead.name}</p>
                         {lead.tags && lead.tags.length > 0 && ( <div className="flex flex-wrap gap-1 mt-2 mb-2"> {lead.tags.map(tagId => { const tag = tags.find(t => t.id === tagId); if (!tag) return null; return ( <span key={tag.id} className="text-xs font-semibold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: tag.color }}> {tag.name} </span> ) })} </div>)}
@@ -1769,7 +1821,7 @@ const KanbanBoard = ({
                  <h3 className="text-base font-semibold p-2 text-center mb-4">Total: {displayedLeads.length} leads arquivados</h3>
                  <div className="space-y-2 overflow-y-auto" style={{maxHeight: 'calc(100vh - 250px)'}}>
                    {displayedLeads.map(lead => (
-                     <div key={lead.id} className="bg-white p-3 rounded-lg shadow-sm flex justify-between items-center">
+                     <div key={lead.id} className="dark:bg-gray-800 p-3 rounded-lg shadow-sm flex justify-between items-center">
                        <div>
                          <p className="font-bold text-gray-700">{lead.name}</p>
                          <p className="text-xs text-gray-500">Arquivado em: {lead.timestamp ? lead.timestamp.toDate().toLocaleDateString() : 'N/A'}</p>
@@ -1790,56 +1842,56 @@ const KanbanBoard = ({
       {/* MODAL DE NOVO LEAD ATUALIZADO */}
       {isNewLeadModalOpen && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-xl relative">
+          <div className="dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-xl relative">
             <button onClick={() => setIsNewLeadModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"> <X size={24} /> </button>
-            <h3 className="text-2xl font-bold text-gray-900 mb-4">Adicionar Novo Lead</h3>
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Adicionar Novo Lead</h3>
             <form onSubmit={handleAddLeadSubmit} className="overflow-y-auto" style={{maxHeight: '75vh'}}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Título do Lead</label>
-                    <input type="text" name="interestSummary" placeholder="Ex: Cliente interessado no Plano Pro" value={newLead.interestSummary} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" />
+                    <input type="text" name="interestSummary" placeholder="Ex: Cliente interessado no Plano Pro" value={newLead.interestSummary} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
                 </div>
                 {/* ... (outros campos: Nome, Email, Telefone, CPF) ... */}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
-                    <input type="text" name="name" value={newLead.name} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" required />
+                    <input type="text" name="name" value={newLead.name} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" required />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input type="email" name="email" value={newLead.email} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" />
+                    <input type="email" name="email" value={newLead.email} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
-                    <input type="tel" name="phone" value={newLead.phone} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg" />
+                    <input type="tel" name="phone" value={newLead.phone} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">CPF (opcional)</label>
-                    <input type="text" name="cpf" placeholder="000.000.000-00" value={newLead.cpf || ''} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg"/>
+                    <input type="text" name="cpf" placeholder="000.000.000-00" value={newLead.cpf || ''} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"/>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Segmento</label>
-                  <select name="businessSegment" value={newLead.businessSegment} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg bg-white">
+                  <select name="businessSegment" value={newLead.businessSegment} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:bg-gray-800">
                       <option value="">Selecione um segmento</option>
                       {segments.map(seg => <option key={seg.id} value={seg.name}>{seg.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select name="status" value={newLead.status} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg bg-white">
+                  <select name="status" value={newLead.status} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:bg-gray-800">
                       {kanbanColumns.map(col => <option key={col.id} value={col.name}>{col.name}</option>)}
                   </select>
                 </div>
                 {/* --- NOVO CAMPO DE SELEÇÃO DO CORRETOR --- */}
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Corretor Responsável</label>
-                  <select name="responsibleUserId" value={newLead.responsibleUserId} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg bg-white" required>
+                  <select name="responsibleUserId" value={newLead.responsibleUserId} onChange={handleNewLeadChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:bg-gray-800" required>
                     <option value="">Selecione um corretor</option>
                     {companyUsers.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
                   </select>
                 </div>
               </div>
               {/* ... (resto do formulário inalterado) ... */}
-              <div className="space-y-3"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Pontos de dor</label><textarea name="painPoints" value={newLead.details.painPoints} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg resize-y"></textarea></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas sobre a solução</label><textarea name="solutionNotes" value={newLead.details.solutionNotes} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg resize-y"></textarea></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Próximos passos</label><textarea name="nextSteps" value={newLead.details.nextSteps} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg resize-y"></textarea></div> </div> <TagSelector lead={newLead} /> <div className="flex justify-end space-x-4 mt-6"> <button type="button" onClick={() => setIsNewLeadModalOpen(false)} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button>
+              <div className="space-y-3"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Pontos de dor</label><textarea name="painPoints" value={newLead.details.painPoints} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 resize-y"></textarea></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas sobre a solução</label><textarea name="solutionNotes" value={newLead.details.solutionNotes} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 resize-y"></textarea></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Próximos passos</label><textarea name="nextSteps" value={newLead.details.nextSteps} onChange={handleNewLeadDetailsChange} rows="2" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 resize-y"></textarea></div> </div> <TagSelector lead={newLead} /> <div className="flex justify-end space-x-4 mt-6"> <button type="button" onClick={() => setIsNewLeadModalOpen(false)} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button>
       <button 
         type="submit" 
         className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 flex items-center justify-center disabled:bg-indigo-400"
@@ -1862,49 +1914,49 @@ const KanbanBoard = ({
       {/* MODAL DE EDIÇÃO DE LEAD ATUALIZADO */}
       {isEditModalOpen && selectedLead && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-xl relative">
+            <div className="dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-xl relative">
                 <button onClick={() => setIsEditModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"><X size={24} /></button>
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">Editar Lead</h3>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Editar Lead</h3>
                 <form onSubmit={handleEditSubmit} className="overflow-y-auto" style={{ maxHeight: '75vh' }}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         {/* ... (outros campos de edição: Título, Nome, etc.) ... */}
                         <div className="md:col-span-2">
                               <label className="block text-sm font-medium text-gray-700 mb-1">Título do Lead</label>
-                              <input type="text" name="interestSummary" placeholder="Ex: Cliente interessado no Plano Pro" value={selectedLead.interestSummary || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg" />
+                              <input type="text" name="interestSummary" placeholder="Ex: Cliente interessado no Plano Pro" value={selectedLead.interestSummary || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
                           </div>
                           <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">Nome Completo</label>
-                              <input type="text" name="name" value={selectedLead.name} onChange={handleEditChange} className="w-full p-3 border rounded-lg" required />
+                              <input type="text" name="name" value={selectedLead.name} onChange={handleEditChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" required />
                           </div>
                           <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                              <input type="email" name="email" value={selectedLead.email || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg" />
+                              <input type="email" name="email" value={selectedLead.email || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
                           </div>
                           <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">Telefone</label>
-                              <input type="tel" name="phone" value={selectedLead.phone || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg" />
+                              <input type="tel" name="phone" value={selectedLead.phone || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200" />
                           </div>
                           <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">CPF (opcional)</label>
-                              <input type="text" name="cpf" placeholder="000.000.000-00" value={selectedLead.cpf || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg"/>
+                              <input type="text" name="cpf" placeholder="000.000.000-00" value={selectedLead.cpf || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"/>
                           </div>
                           <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">Segmento</label>
-                              <select name="businessSegment" value={selectedLead.businessSegment || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg bg-white">
+                              <select name="businessSegment" value={selectedLead.businessSegment || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:bg-gray-800">
                                   <option value="">Selecione um segmento</option>
                                   {segments.map(seg => <option key={seg.id} value={seg.name}>{seg.name}</option>)}
                               </select>
                           </div>
                           <div>
                               <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                              <select name="status" value={selectedLead.status} onChange={handleEditChange} className="w-full p-3 border rounded-lg bg-white">
+                              <select name="status" value={selectedLead.status} onChange={handleEditChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:bg-gray-800">
                                   {kanbanColumns.map(col => <option key={col.id} value={col.name}>{col.name}</option>)}
                               </select>
                           </div>
                         {/* --- NOVO CAMPO DE SELEÇÃO DO CORRETOR --- */}
                         <div className="md:col-span-2">
                           <label className="block text-sm font-medium text-gray-700 mb-1">Corretor Responsável</label>
-                          <select name="responsibleUserId" value={selectedLead.responsibleUserId || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg bg-white" required>
+                          <select name="responsibleUserId" value={selectedLead.responsibleUserId || ''} onChange={handleEditChange} className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:bg-gray-800" required>
                             <option value="">Selecione um corretor</option>
                             {companyUsers.map(user => <option key={user.id} value={user.id}>{user.name || user.email}</option>)}
                           </select>
@@ -1912,9 +1964,9 @@ const KanbanBoard = ({
                     </div>
                     {/* ... (resto do formulário de edição inalterado) ... */}
                     <div className="space-y-4">
-                          <div><label className="block text-sm font-medium text-gray-700 mb-1">Pontos de dor</label><textarea name="painPoints" value={selectedLead.details?.painPoints || ''} onChange={handleEditDetailsChange} rows="3" className="w-full p-3 border rounded-lg resize-y" ></textarea></div>
-                          <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas sobre a solução</label><textarea name="solutionNotes" value={selectedLead.details?.solutionNotes || ''} onChange={handleEditDetailsChange} rows="3" className="w-full p-3 border rounded-lg resize-y" ></textarea></div>
-                          <div><label className="block text-sm font-medium text-gray-700 mb-1">Próximos passos</label><textarea name="nextSteps" value={selectedLead.details?.nextSteps || ''} onChange={handleEditDetailsChange} rows="3" className="w-full p-3 border rounded-lg resize-y" ></textarea></div>
+                          <div><label className="block text-sm font-medium text-gray-700 mb-1">Pontos de dor</label><textarea name="painPoints" value={selectedLead.details?.painPoints || ''} onChange={handleEditDetailsChange} rows="3" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 resize-y" ></textarea></div>
+                          <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas sobre a solução</label><textarea name="solutionNotes" value={selectedLead.details?.solutionNotes || ''} onChange={handleEditDetailsChange} rows="3" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 resize-y" ></textarea></div>
+                          <div><label className="block text-sm font-medium text-gray-700 mb-1">Próximos passos</label><textarea name="nextSteps" value={selectedLead.details?.nextSteps || ''} onChange={handleEditDetailsChange} rows="3" className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 resize-y" ></textarea></div>
                       </div>
                       <TagSelector lead={selectedLead} />
                       <div className="flex justify-between items-center mt-6">
@@ -1951,7 +2003,7 @@ const KanbanBoard = ({
         onClose={() => setIsSegmentModalOpen(false)} 
         companyId={companyId} 
       />
-       {isManageColumnsModalOpen && ( <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4"> <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg"> <h3 className="text-2xl font-bold text-gray-900 mb-6">Gerenciar Colunas do Kanban</h3> <div className="space-y-3 mb-6 max-h-60 overflow-y-auto p-1"> {editingColumns.map((col, index) => ( <div key={col.id || index} className="flex items-center space-x-2 bg-gray-50 p-2 rounded"> <input type="text" value={col.name} onChange={(e) => handleColumnNameChange(index, e.target.value)} className="flex-1 p-2 border rounded-lg" /> <select value={col.type || 'transit'} onChange={(e) => handleColumnTypeChange(index, e.target.value)} className="p-2 border rounded-lg bg-white"> {COLUMN_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)} </select> <button onClick={() => handleDeleteColumn(index)} className="text-red-500 hover:text-red-700 p-2 rounded-full"><Trash2 size={18} /></button> </div> ))} </div> <button onClick={handleAddNewColumn} className="w-full border-2 border-dashed border-gray-300 text-gray-500 p-3 rounded-lg hover:bg-gray-100 mb-6">Adicionar Nova Coluna</button> <div className="flex justify-end space-x-4"> <button type="button" onClick={() => setIsManageColumnsModalOpen(false)} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button> 
+       {isManageColumnsModalOpen && ( <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4"> <div className="dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-lg"> <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Gerenciar Colunas do Kanban</h3> <div className="space-y-3 mb-6 max-h-60 overflow-y-auto p-1"> {editingColumns.map((col, index) => ( <div key={col.id || index} className="flex items-center space-x-2 bg-gray-50 p-2 rounded"> <input type="text" value={col.name} onChange={(e) => handleColumnNameChange(index, e.target.value)} className="flex-1 p-2 border rounded-lg" /> <select value={col.type || 'transit'} onChange={(e) => handleColumnTypeChange(index, e.target.value)} className="p-2 border rounded-lg dark:bg-gray-800"> {COLUMN_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)} </select> <button onClick={() => handleDeleteColumn(index)} className="text-red-500 hover:text-red-700 p-2 rounded-full"><Trash2 size={18} /></button> </div> ))} </div> <button onClick={handleAddNewColumn} className="w-full border-2 border-dashed border-gray-300 text-gray-500 p-3 rounded-lg hover:bg-gray-100 mb-6">Adicionar Nova Coluna</button> <div className="flex justify-end space-x-4"> <button type="button" onClick={() => setIsManageColumnsModalOpen(false)} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button> 
       <button 
         type="button" 
         onClick={handleSaveChanges} 
@@ -1987,8 +2039,8 @@ const NewLeadForm = () => {
   };
   
   return (
-    <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl mx-auto">
-      <h3 className="text-2xl font-bold text-gray-900 mb-4">Adicionar Novo Lead</h3>
+    <div className="dark:bg-gray-800 p-8 rounded-xl shadow-lg w-full max-w-2xl mx-auto">
+      <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">Adicionar Novo Lead</h3>
       {!isSubmitted ? (
         <form onSubmit={handleSubmit} className="space-y-4">
           <input
@@ -1997,7 +2049,7 @@ const NewLeadForm = () => {
             placeholder="Nome Completo"
             value={lead.name}
             onChange={handleChange}
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             required
           />
           <input
@@ -2006,7 +2058,7 @@ const NewLeadForm = () => {
             placeholder="Email"
             value={lead.email}
             onChange={handleChange}
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             required
           />
           <input
@@ -2015,7 +2067,7 @@ const NewLeadForm = () => {
             placeholder="Telefone (opcional)"
             value={lead.phone}
             onChange={handleChange}
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <input
             type="text"
@@ -2023,7 +2075,7 @@ const NewLeadForm = () => {
             placeholder="Empresa (opcional)"
             value={lead.company}
             onChange={handleChange}
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <input
             type="text"
@@ -2031,7 +2083,7 @@ const NewLeadForm = () => {
             placeholder="Segmento de Negócios (opcional)"
             value={lead.businessSegment}
             onChange={handleChange}
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full p-3 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <div className="flex justify-end">
             <button
@@ -2049,6 +2101,45 @@ const NewLeadForm = () => {
           <p className="text-gray-600 mt-2">O lead de {lead.name} foi adicionado à sua lista.</p>
         </div>
       )}
+    </div>
+  );
+};
+
+const SettingsPage = () => {
+  const { theme, setTheme } = useContext(ThemeContext);
+
+  const getButtonClass = (buttonTheme) => {
+    return `flex-1 p-4 rounded-lg flex flex-col items-center justify-center border-2 transition-colors ${
+      theme === buttonTheme
+        ? 'border-indigo-500 bg-indigo-50 dark:bg-gray-700'
+        : 'border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+    }`;
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex-shrink-0 mb-6">
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Configurações</h2>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">
+          Personalize a aparência e o comportamento da plataforma.
+        </p>
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg w-full max-w-2xl mx-auto">
+        <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">Aparência</h3>
+        <p className="text-gray-600 dark:text-gray-400 mb-6">Escolha como a plataforma será exibida para você.</p>
+        
+        <div className="flex space-x-4 text-center">
+          <button onClick={() => setTheme('light')} className={getButtonClass('light')}>
+            <Sun className="mb-2 text-gray-700 dark:text-gray-300" />
+            <span className="font-semibold text-gray-800 dark:text-gray-200">Claro</span>
+          </button>
+          <button onClick={() => setTheme('dark')} className={getButtonClass('dark')}>
+            <Moon className="mb-2 text-gray-700 dark:text-gray-300" />
+            <span className="font-semibold text-gray-800 dark:text-gray-200">Escuro</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
