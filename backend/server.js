@@ -2,7 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
-const { db, auth, storage } = require('./firebaseAdmin');
+const { db, auth, storage, admin } = require('./firebaseAdmin'); // Adicionado 'admin'
 
 // Carrega as variáveis de ambiente do arquivo .env
 require('dotenv').config();
@@ -204,7 +204,7 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
         .get();
 
       if (companyQuery.empty) {
-        throw new Error(`Nenhuma empresa encontrada para o número ${phoneNumberId}`);
+        throw new Error(`Nenhuma empresa encontrada para o número ${phoneNumberId}.`);
       }
       const companyId = companyQuery.docs[0].id;
 
@@ -255,9 +255,10 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
           leadDocRef = existingLeadDoc.ref;
           leadId = existingLeadDoc.id;
           console.log(`[Webhook] Lead ativo encontrado (${leadId}). Adicionando mensagem.`);
+          // Atualiza o timestamp para o valor do servidor
           await leadDocRef.update({
             lastMessage: messageText,
-            timestamp: new Date(parseInt(messageDetails.timestamp) * 1000),
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
           });
         } else {
           console.log(
@@ -270,8 +271,9 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
             phoneNumber: fromNumber,
             status: initialStatus,
             lastMessage: messageText,
-            timestamp: new Date(parseInt(messageDetails.timestamp) * 1000),
-            dateCreated: new Date().toISOString(),
+            // Usa o serverTimestamp para ambos os campos de data
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            dateCreated: admin.firestore.FieldValue.serverTimestamp(), 
             source: 'whatsapp',
             tags: [],
             details: { painPoints: '', solutionNotes: '', nextSteps: '' },
@@ -285,7 +287,7 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
         await messagesRef.add({
           from: 'contact',
           text: messageText,
-          timestamp: new Date(parseInt(messageDetails.timestamp) * 1000),
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
         });
 
         // Envia para o n8n para que o agente possa processar
@@ -303,7 +305,7 @@ app.post('/api/whatsapp/webhook', async (req, res) => {
                 from: fromNumber,
                 name: contactName,
                 text: messageText,
-                timestamp: timestamp
+                timestamp: admin.firestore.FieldValue.serverTimestamp()
             },
             leadId: leadId,
             companyId: companyId
@@ -392,7 +394,7 @@ app.post('/api/automations/execute', async (req, res) => {
     if (!accessToken || !fromPhoneNumberId) {
       console.error(`[AUTOMATION] Credenciais do WhatsApp não encontradas para a empresa ${companyId}. Abortando.`);
       await automationLogsRef.add({
-        timestamp: new Date(),
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
         ruleName: 'Verificação Geral',
         status: 'Falha Crítica',
         details: `As credenciais do WhatsApp não foram encontradas. A execução foi abortada.`
@@ -446,7 +448,7 @@ app.post('/api/automations/execute', async (req, res) => {
             
             // LOG DE SUCESSO
             await automationLogsRef.add({
-              timestamp: new Date(),
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
               ruleId: ruleDoc.id, ruleName: rule.name, leadId: leadDoc.id, leadName: lead.name,
               status: 'Sucesso',
               details: `Mensagem de automação enviada para ${lead.name} (${lead.phoneNumber}).`
@@ -454,13 +456,13 @@ app.post('/api/automations/execute', async (req, res) => {
             console.log(`[AUTOMATION LOG] Sucesso: Mensagem enviada para ${lead.name}.`);
             
             // Atualiza o timestamp do lead para reiniciar a contagem de inatividade
-            await leadDoc.ref.update({ timestamp: new Date() });
+            await leadDoc.ref.update({ timestamp: admin.firestore.FieldValue.serverTimestamp() });
 
           } catch (error) {
             // LOG DE FALHA
             const errorMessage = error.response ? JSON.stringify(error.response.data) : error.message;
             await automationLogsRef.add({
-              timestamp: new Date(),
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
               ruleId: ruleDoc.id, ruleName: rule.name, leadId: leadDoc.id, leadName: lead.name || 'Nome não encontrado',
               status: 'Falha',
               details: `Erro ao processar ação: ${errorMessage}`
@@ -519,8 +521,8 @@ app.post('/api/perform-daily-snapshot', async (req, res) => {
     }
 
     const qNew = leadsRef
-      .where('dateCreated', '>=', startOfDay.toISOString())
-      .where('dateCreated', '<', endOfDay.toISOString());
+      .where('dateCreated', '>=', startOfDay) // Corrigido
+      .where('dateCreated', '<', endOfDay); // Corrigido
     const newLeadsSnapshot = await qNew.get();
     const todaysNewLeadsCount = newLeadsSnapshot.size;
 
@@ -590,7 +592,7 @@ app.post('/api/evolution/send-message', isAuthorized, async (req, res) => {
     await messageRef.add({
       from: 'me',
       text: message,
-      timestamp: new Date(),
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     console.log(`[EVOLUTION SEND] Mensagem para ${recipientJid} enviada e salva com sucesso.`);
@@ -673,9 +675,8 @@ app.post('/api/evolution/webhook', async (req, res) => {
       const messageDetails = messageData.message;
       
       // LÓGICA FINAL DE CAPTURA DE NOME: Usa o pushName como fonte principal.
-      const contactName = messageData.pushName || fromNumber;
+      const contactName = messageData.pushName || contactNumber;
       
-      const timestamp = new Date(messageData.messageTimestamp * 1000);
       const companyId = '3bHx7UfBFve1907kwqqT';
       const leadsRef = db.collection('companies').doc(companyId).collection('leads');
       const leadQuery = await leadsRef.where('phone', '==', contactNumber).get();
@@ -683,7 +684,7 @@ app.post('/api/evolution/webhook', async (req, res) => {
       let leadDocRef, leadId;
       let messageToSave = {
         from: isFromMe ? 'me' : 'contact',
-        timestamp: timestamp
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
       };
 
       if (messageDetails?.imageMessage || messageDetails?.audioMessage || messageDetails?.videoMessage || messageDetails?.documentMessage || messageDetails?.stickerMessage) {
@@ -707,8 +708,8 @@ app.post('/api/evolution/webhook', async (req, res) => {
           phone: contactNumber,
           status: 'Em Contato',
           lastMessage: messageToSave.text,
-          timestamp: timestamp,
-          dateCreated: new Date().toISOString(),
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          dateCreated: admin.firestore.FieldValue.serverTimestamp(),
           source: 'whatsapp',
           tags: [],
           details: {}
@@ -719,9 +720,9 @@ app.post('/api/evolution/webhook', async (req, res) => {
         leadDocRef = leadQuery.docs[0].ref;
         leadId = leadQuery.docs[0].id;
         await leadDocRef.update({
-          name: contactName, // Garante que o nome esteja sempre atualizado com o pushName
+          name: contactName,
           lastMessage: messageToSave.text,
-          timestamp: timestamp
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
       } else {
         return;
@@ -944,7 +945,7 @@ app.post('/api/generate-weekly-insights', async (req, res) => {
     const leadsRef = db.collection('companies').doc(companyId).collection('leads');
     
     // Novos leads na semana
-    const newLeadsQuery = leadsRef.where('dateCreated', '>=', sevenDaysAgo.toISOString());
+    const newLeadsQuery = leadsRef.where('dateCreated', '>=', sevenDaysAgo);
     const newLeadsSnapshot = await newLeadsQuery.get();
     const newLeadsCount = newLeadsSnapshot.size;
 
@@ -974,7 +975,7 @@ app.post('/api/generate-weekly-insights', async (req, res) => {
     const insightsRef = db.collection('companies').doc(companyId).collection('insights');
     await insightsRef.add({
       insights: insightsArray, // Salva o array de insights
-      generatedAt: new Date()
+      generatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     console.log('[CRON] Insights semanais gerados e salvos com sucesso.');
@@ -1037,7 +1038,7 @@ app.post('/api/perform-monthly-snapshot', async (req, res) => {
       month: month + 1,
       totalQualifiedCount: totalQualifiedInMonth,
       totalNewLeadsCount: totalNewLeadsInMonth, // <-- NOVO CAMPO
-      lastUpdated: new Date()
+      lastUpdated: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
     console.log(`[CRON MENSAL] Snapshot de performance mensal para ${docId} concluído com sucesso.`);

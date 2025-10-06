@@ -1,3 +1,5 @@
+// src/App.js
+
 import { useState, useEffect, useMemo, createContext, useContext } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import {
@@ -120,40 +122,25 @@ const COLUMN_TYPES = [
 ];
 
 const ThemeContext = createContext();
+
 const ThemeProvider = ({ children }) => {
   const [theme, setTheme] = useState(() => {
-    if (typeof localStorage !== 'undefined' && localStorage.getItem('theme')) {
-      return localStorage.getItem('theme');
+    // Tenta obter do localStorage primeiro
+    const localTheme = typeof localStorage !== 'undefined' ? localStorage.getItem('theme') : null;
+    if (localTheme) {
+      return localTheme;
     }
+    // Se não tiver no localStorage, usa a preferência do sistema
     if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
       return 'dark';
     }
     return 'light';
   });
 
-  const ThemeToggle = () => {
-  const { theme, setTheme } = useContext(ThemeContext);
-  const isDark = theme === 'dark';
-
-  return (
-    <button
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      aria-label="Alternar tema"
-      className="p-2 rounded-md transition-shadow shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-gray-700"
-      title={isDark ? 'Mudar para claro' : 'Mudar para escuro'}
-    >
-      {isDark ? <Sun className="h-5 w-5 text-yellow-300" /> : <Moon className="h-5 w-5 text-gray-600" />}
-    </button>
-  );
-};
-
   useEffect(() => {
     const root = window.document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
+    root.classList.remove('light', 'dark'); // Remove as classes para evitar duplicatas
+    root.classList.add(theme); // Adiciona a classe correta
     localStorage.setItem('theme', theme);
   }, [theme]);
 
@@ -248,17 +235,37 @@ function MainApp() {
 
           // Configura o listener para os leads da empresa encontrada
           const leadsRef = collection(db, "companies", foundCompanyId, "leads");
+          // CORREÇÃO: Pega todos os leads e ordena no frontend para evitar crash
           const unsubscribeLeads = onSnapshot(leadsRef, (querySnapshot) => {
             const leadsArray = [];
             querySnapshot.forEach((doc) => {
-              leadsArray.push({ id: doc.id, ...doc.data() });
+              const data = doc.data();
+              // Lógica de sanitização de datas
+              const sanitizedData = {
+                  ...data,
+                  // Converte o timestamp para um objeto Date, seja ele Timestamp do Firestore ou uma string ISO
+                  timestamp: data.timestamp && typeof data.timestamp.toDate === 'function'
+                      ? data.timestamp.toDate()
+                      : data.timestamp ? new Date(data.timestamp) : new Date(0), // fallback para nova data se não existir
+                  
+                  // Mesma lógica para a data de criação
+                  dateCreated: data.dateCreated && typeof data.dateCreated.toDate === 'function'
+                      ? data.dateCreated.toDate()
+                      : data.dateCreated ? new Date(data.dateCreated) : new Date(0),
+
+                  // Mesma lógica para a data de qualificação
+                  qualificationDate: data.qualificationDate && typeof data.qualificationDate.toDate === 'function'
+                      ? data.qualificationDate.toDate()
+                      : data.qualificationDate ? new Date(data.qualificationDate) : null,
+              };
+              leadsArray.push({ id: doc.id, ...sanitizedData });
             });
 
             // ORDENA A LISTA PELA DATA MAIS RECENTE
             leadsArray.sort((a, b) => {
-              const timestampA = a.timestamp?.toDate() || 0;
-              const timestampB = b.timestamp?.toDate() || 0;
-              return timestampB - timestampA; // Ordem decrescente
+              const timestampA = a.timestamp || new Date(0);
+              const timestampB = b.timestamp || new Date(0);
+              return timestampB.getTime() - timestampA.getTime(); // Ordem decrescente
             });
 
             setLeads(leadsArray);
@@ -465,7 +472,9 @@ function MainApp() {
       await addDoc(collection(db, "companies", companyId, "leads"), {
         ...newLeadData,
         status: 'Em Contato',
-        dateCreated: new Date().toISOString(),
+        // Usa o serverTimestamp para as datas
+        dateCreated: serverTimestamp(),
+        timestamp: serverTimestamp(),
         source: 'manual', 
         tags: [],
         details: {
@@ -675,8 +684,8 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }
     const now = new Date();
     const todayStr = format(now, 'yyyy-MM-dd');
 
-    const qualifiedLeadsToday = leads.filter(l => l.qualificationDate && format(l.qualificationDate.toDate(), 'yyyy-MM-dd') === todayStr && positiveConclusionStatusNames.includes(l.status)).length;
-    const newLeadsToday = leads.filter(l => format(new Date(l.dateCreated), 'yyyy-MM-dd') === todayStr).length;
+    const qualifiedLeadsToday = leads.filter(l => l.qualificationDate && format(l.qualificationDate, 'yyyy-MM-dd') === todayStr && positiveConclusionStatusNames.includes(l.status)).length;
+    const newLeadsToday = leads.filter(l => format(l.dateCreated, 'yyyy-MM-dd') === todayStr).length;
 
     const yearlyTotalsFromCron = historicalMonthlyData.filter(d => d.year === selectedYear).reduce((acc, curr) => {
         acc.captados += curr.totalNewLeadsCount || 0;
@@ -699,18 +708,18 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }
     });
     
     const sevenDaysAgo = subDays(new Date(), 7);
-    const leadsLast7Days = leads.filter(l => new Date(l.dateCreated) >= sevenDaysAgo);
-    const qualifiedLast7Days = leads.filter(l => l.qualificationDate && l.qualificationDate.toDate() >= sevenDaysAgo && positiveConclusionStatusNames.includes(l.status)).length;
+    const leadsLast7Days = leads.filter(l => l.dateCreated >= sevenDaysAgo);
+    const qualifiedLast7Days = leads.filter(l => l.qualificationDate && l.qualificationDate >= sevenDaysAgo && positiveConclusionStatusNames.includes(l.status)).length;
     const funnelData = { new: leadsLast7Days.length, contacted: leadsLast7Days.filter(l => !initialStatusNames.includes(l.status)).length, qualified: qualifiedLast7Days };
-    const recentActivities = leads.sort((a,b) => (b.timestamp?.toDate() || 0) - (a.timestamp?.toDate() || 0)).slice(0, 5);
+    const recentActivities = leads.sort((a,b) => (b.timestamp || new Date(0)).getTime() - (a.timestamp || new Date(0)).getTime()).slice(0, 5);
 
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
     const qualifiedThisMonth = leads.filter(l =>
       l.qualificationDate &&
-      l.qualificationDate.toDate() >= startOfMonth &&
-      l.qualificationDate.toDate() <= endOfMonth &&
+      l.qualificationDate >= startOfMonth &&
+      l.qualificationDate <= endOfMonth &&
       positiveConclusionStatusNames.includes(l.status) &&
       l.responsibleUserId
     );
@@ -734,8 +743,8 @@ const Dashboard = ({ leads, kanbanColumns, onViewLead, companyId, companyUsers }
   }, [leads, kanbanColumns, historicalMonthlyData, selectedYear, companyUsers]);
   
   const generateActivityText = (lead) => {
-    const creationTime = new Date(lead.dateCreated).getTime();
-    const updateTime = lead.timestamp ? lead.timestamp.toDate().getTime() : creationTime;
+    const creationTime = lead.dateCreated.getTime();
+    const updateTime = lead.timestamp.getTime();
     const isCreationEvent = Math.abs(updateTime - creationTime) < 5000;
     if (isCreationEvent) {
       if (lead.source === 'whatsapp') { return 'Nova conversa recebida.'; }
@@ -1238,7 +1247,7 @@ const ReportsPage = ({ leads, kanbanColumns, tags, segments }) => {
         const segmentMatch = filters.businessSegment ? lead.businessSegment === filters.businessSegment : true;
         let dateMatch = true;
         if (lead.dateCreated) {
-          const leadDate = parseDateAsLocal(lead.dateCreated);
+          const leadDate = lead.dateCreated;
           if (filters.de) {
             const startDate = parseDateAsLocal(filters.de);
             dateMatch = dateMatch && (leadDate >= startDate);
@@ -1292,7 +1301,7 @@ const ReportsPage = ({ leads, kanbanColumns, tags, segments }) => {
             `"${lead.id}"`, `"${lead.interestSummary || 'null'}"`, `"${lead.name || 'null'}"`, 
             `"${lead.email || 'null'}"`, `"${lead.phone || 'null'}"`, `"${lead.company || 'null'}"`, 
             `"${lead.businessSegment || 'null'}"`, `"${lead.status || 'null'}"`, 
-            `"${lead.dateCreated || 'null'}"`, `"${tagNames}"`, 
+            `"${lead.dateCreated ? lead.dateCreated.toLocaleDateString() : 'null'}"`, `"${tagNames}"`, 
             `"${lead.details?.painPoints?.replace(/"/g, '""') || 'null'}"`,
             `"${lead.details?.solutionNotes?.replace(/"/g, '""') || 'null'}"`,
             `"${lead.details?.nextSteps?.replace(/"/g, '""') || 'null'}"`,
@@ -1420,7 +1429,7 @@ const ReportsPage = ({ leads, kanbanColumns, tags, segments }) => {
                         })}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{lead.dateCreated ? new Date(lead.dateCreated).toLocaleDateString() : 'null'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{lead.dateCreated ? lead.dateCreated.toLocaleDateString() : 'null'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1766,7 +1775,32 @@ const KanbanBoard = ({
     }
   };
 
-  // O JSX principal do KanbanBoard permanece o mesmo...
+  // Drag and Drop para ordenação de colunas
+  const handleColumnDragStart = (e, index) => {
+    e.dataTransfer.setData('columnIndex', index);
+  };
+  
+  const handleColumnDrop = (e, dropIndex) => {
+    e.preventDefault();
+    const dragIndex = e.dataTransfer.getData('columnIndex');
+    const newColumns = [...editingColumns];
+    const [draggedColumn] = newColumns.splice(dragIndex, 1);
+    newColumns.splice(dropIndex, 0, draggedColumn);
+    
+    // Atualiza a ordem de todos os elementos para salvar no Firestore
+    const updatedColumnsWithOrder = newColumns.map((col, index) => ({
+      ...col,
+      order: index + 1
+    }));
+    
+    setEditingColumns(updatedColumnsWithOrder);
+  };
+
+  const getColumnDragOverClasses = (index) => {
+    // Adiciona uma classe visual para indicar o local do drop
+    return editingColumns.length > 1 && index < editingColumns.length - 1 ? 'relative after:content-[""] after:absolute after:top-0 after:-right-2 after:w-1 after:h-full after:bg-indigo-500 after:rounded-full after:opacity-0 after:transition-opacity hover:after:opacity-100' : '';
+  };
+
   return (
     <div className="p-4 md:p-8 flex flex-col h-full text-gray-900 dark:text-gray-100">
       {/* ... (cabeçalho do kanban inalterado) ... */}
@@ -1824,7 +1858,7 @@ const KanbanBoard = ({
                      <div key={lead.id} className="dark:bg-gray-800 p-3 rounded-lg shadow-sm flex justify-between items-center">
                        <div>
                          <p className="font-bold text-gray-700">{lead.name}</p>
-                         <p className="text-xs text-gray-500">Arquivado em: {lead.timestamp ? lead.timestamp.toDate().toLocaleDateString() : 'N/A'}</p>
+                         <p className="text-xs text-gray-500">Arquivado em: {lead.timestamp ? lead.timestamp.toLocaleDateString() : 'N/A'}</p>
                        </div>
                        <button onClick={() => handleRestoreClick(lead.id)} className="bg-green-100 text-green-800 px-3 py-1 rounded-full hover:bg-green-200 text-sm font-semibold flex items-center">
                          <ArchiveRestore size={16} className="mr-2"/>
@@ -2003,7 +2037,7 @@ const KanbanBoard = ({
         onClose={() => setIsSegmentModalOpen(false)} 
         companyId={companyId} 
       />
-       {isManageColumnsModalOpen && ( <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4"> <div className="dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-lg"> <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Gerenciar Colunas do Kanban</h3> <div className="space-y-3 mb-6 max-h-60 overflow-y-auto p-1"> {editingColumns.map((col, index) => ( <div key={col.id || index} className="flex items-center space-x-2 bg-gray-50 p-2 rounded"> <input type="text" value={col.name} onChange={(e) => handleColumnNameChange(index, e.target.value)} className="flex-1 p-2 border rounded-lg" /> <select value={col.type || 'transit'} onChange={(e) => handleColumnTypeChange(index, e.target.value)} className="p-2 border rounded-lg dark:bg-gray-800"> {COLUMN_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)} </select> <button onClick={() => handleDeleteColumn(index)} className="text-red-500 hover:text-red-700 p-2 rounded-full"><Trash2 size={18} /></button> </div> ))} </div> <button onClick={handleAddNewColumn} className="w-full border-2 border-dashed border-gray-300 text-gray-500 p-3 rounded-lg hover:bg-gray-100 mb-6">Adicionar Nova Coluna</button> <div className="flex justify-end space-x-4"> <button type="button" onClick={() => setIsManageColumnsModalOpen(false)} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button> 
+       {isManageColumnsModalOpen && ( <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4"> <div className="dark:bg-gray-800 dark:bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-lg"> <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-6">Gerenciar Colunas do Kanban</h3> <div className="space-y-3 mb-6 max-h-60 overflow-y-auto p-1"> {editingColumns.map((col, index) => ( <div key={col.id || index} draggable onDragStart={(e) => handleColumnDragStart(e, index)} onDragOver={handleDragOver} onDrop={(e) => handleColumnDrop(e, index)} className={`flex items-center space-x-2 bg-gray-50 p-2 rounded cursor-move ${getColumnDragOverClasses(index)}`}> <input type="text" value={col.name} onChange={(e) => handleColumnNameChange(index, e.target.value)} className="flex-1 p-2 border rounded-lg" /> <select value={col.type || 'transit'} onChange={(e) => handleColumnTypeChange(index, e.target.value)} className="p-2 border rounded-lg dark:bg-gray-800"> {COLUMN_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)} </select> <button onClick={() => handleDeleteColumn(index)} className="text-red-500 hover:text-red-700 p-2 rounded-full"><Trash2 size={18} /></button> </div> ))} </div> <button onClick={handleAddNewColumn} className="w-full border-2 border-dashed border-gray-300 text-gray-500 p-3 rounded-lg hover:bg-gray-100 mb-6">Adicionar Nova Coluna</button> <div className="flex justify-end space-x-4"> <button type="button" onClick={() => setIsManageColumnsModalOpen(false)} className="bg-gray-300 text-gray-800 px-6 py-2 rounded-lg hover:bg-gray-400">Cancelar</button> 
       <button 
         type="button" 
         onClick={handleSaveChanges} 
