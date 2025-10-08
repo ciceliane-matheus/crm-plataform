@@ -20,7 +20,7 @@ console.log('[Firebase Admin] SDK inicializado com sucesso.');
 // Cria as instâncias dos serviços que vamos usar
 const db = admin.firestore();
 const auth = admin.auth();
-const storage = admin.storage(); // <-- Adicionamos esta linha
+const storage = admin.storage();
 
 // Exporta todos os serviços para serem usados no projeto
-module.exports = { db, auth, storage }; // <-- Adicionamos o storage aqui
+module.exports = { db, auth, storage, admin }; // <-- Adicionamos o admin aqui

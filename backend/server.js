@@ -2,7 +2,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
-const { db, auth, storage, admin } = require('./firebaseAdmin'); // Adicionado 'admin'
+const { db, auth, storage, admin } = require('./firebaseAdmin');
 
 // Carrega as variáveis de ambiente do arquivo .env
 require('dotenv').config();
@@ -77,39 +77,35 @@ app.get('/api/whatsapp/callback', async (req, res) => {
   const { code, state: companyId } = req.query;
   const META_APP_ID = process.env.META_APP_ID;
   const META_APP_SECRET = process.env.META_APP_SECRET;
-  const REDIRECT_URI = process.env.META_REDIRECT_URI; // Corrigido para usar a variável de ambiente
+  const REDIRECT_URI = process.env.META_REDIRECT_URI;
 
   if (!code) {
     return res.status(400).send('Erro: Código de autorização não encontrado.');
   }
 
   try {
-    // 1. Troca o "code" pelo access_token do usuário
     const tokenUrl = `https://graph.facebook.com/v19.0/oauth/access_token?client_id=${META_APP_ID}&redirect_uri=${REDIRECT_URI}&client_secret=${META_APP_SECRET}&code=${code}`;
     const tokenResponse = await axios.get(tokenUrl);
     const accessToken = tokenResponse.data.access_token;
 
-    // 2. Usa o accessToken para encontrar a Conta Empresarial do WhatsApp (WABA) do usuário
     const wabaApiUrl = `https://graph.facebook.com/v19.0/me/whatsapp_business_accounts?access_token=${accessToken}`;
     const wabaResponse = await axios.get(wabaApiUrl);
-    const wabaId = wabaResponse.data?.data?.[0]?.id; // Pega o ID da primeira conta encontrada
+    const wabaId = wabaResponse.data?.data?.[0]?.id;
 
     if (!wabaId) {
       throw new Error("Nenhuma Conta Empresarial do WhatsApp (WABA) foi encontrada para este usuário.");
     }
     console.log(`[Callback] WABA ID encontrado: ${wabaId}`);
 
-    // 3. Usa o ID da WABA para encontrar o ID do número de telefone
     const phoneNumberApiUrl = `https://graph.facebook.com/v19.0/${wabaId}/phone_numbers?access_token=${accessToken}`;
     const phoneNumberResponse = await axios.get(phoneNumberApiUrl);
-    const phoneNumberId = phoneNumberResponse.data?.data?.[0]?.id; // Pega o ID do primeiro número
+    const phoneNumberId = phoneNumberResponse.data?.data?.[0]?.id;
 
     if (!phoneNumberId) {
         throw new Error("Nenhum número de telefone encontrado para esta Conta Empresarial.");
     }
     console.log(`[Callback] Phone Number ID encontrado: ${phoneNumberId}`);
 
-    // 4. Salva tudo no Firestore
     const companyRef = db.collection('companies').doc(companyId);
     await companyRef.set(
       {
@@ -122,7 +118,6 @@ app.get('/api/whatsapp/callback', async (req, res) => {
 
     console.log(`WhatsApp conectado com sucesso para a empresa ${companyId}.`);
     
-    // Fecha a janela pop-up
     res.send('<script>window.close();</script>');
 
   } catch (error) {
@@ -155,422 +150,21 @@ app.post('/api/whatsapp/disconnect', async (req, res) => {
 // --- ROTAS DE MENSAGENS E WEBHOOKS DO WHATSAPP ---
 // =================================================================================
 app.post('/api/whatsapp/send-message', isAuthorized, async (req, res) => {
-  const { recipientId, message, companyId } = req.body;
-  if (!recipientId || !message || !companyId) {
-    return res.status(400).json({ error: 'Recipient ID, message, and companyId are required.' });
-  }
-
-  try {
-    const companyRef = db.collection('companies').doc(companyId);
-    const companyDoc = await companyRef.get();
-    if (!companyDoc.exists() || !companyDoc.data().whatsappConnected) {
-      return res.status(403).json({ error: 'O WhatsApp não está conectado para esta empresa.' });
-    }
-
-    const { whatsappAccessToken: accessToken, whatsappPhoneNumberId: fromPhoneNumberId } = companyDoc.data();
-    if (!accessToken || !fromPhoneNumberId) {
-      return res.status(500).json({ error: 'As credenciais da API do WhatsApp não estão totalmente configuradas para esta empresa.' });
-    }
-
-    const url = `https://graph.facebook.com/v19.0/${fromPhoneNumberId}/messages`;
-    const data = {
-      messaging_product: 'whatsapp', to: recipientId, type: 'text',
-      text: { preview_url: false, body: message },
-    };
-    const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
-    await axios.post(url, data, { headers });
-    console.log(`[send-message] Mensagem para ${recipientId} enviada com sucesso em nome da empresa ${companyId}.`);
-    res.status(200).json({ success: true });
-  } catch (error) {
-    console.error('[send-message] Falha ao enviar mensagem:', error.response ? error.response.data : error.message);
-    res.status(500).json({ error: 'Falha ao enviar mensagem.' });
-  }
-});
-
-app.post('/api/whatsapp/webhook', async (req, res) => {
-  const messageData = req.body;
-  res.sendStatus(200); // responde rápido ao Meta
-
-  try {
-    const change = messageData.entry?.[0]?.changes?.[0];
-    if (change?.field === 'messages' && Array.isArray(change?.value?.messages)) {
-      const phoneNumberId = change.value?.metadata?.phone_number_id;
-      if (!phoneNumberId) throw new Error("phone_number_id não encontrado no payload.");
-
-      // Descobre a empresa pelo phone_number_id
-      const companyQuery = await db
-        .collection('companies')
-        .where('whatsappPhoneNumberId', '==', phoneNumberId)
-        .get();
-
-      if (companyQuery.empty) {
-        throw new Error(`Nenhuma empresa encontrada para o número ${phoneNumberId}.`);
-      }
-      const companyId = companyQuery.docs[0].id;
-
-      for (const messageDetails of change.value.messages) {
-        const fromNumber = messageDetails.from;
-        const messageType = messageDetails.type;
-        let messageText = '';
-
-        if (messageType === 'text') {
-          messageText = messageDetails.text.body;
-        } else {
-          messageText = `[${messageType} recebido]`;
-        }
-
-        const contactDetails = change.value.contacts?.[0];
-        const contactName = contactDetails?.profile?.name || fromNumber;
-
-        // Firestore refs
-        const companyRef = db.collection('companies').doc(companyId);
-        const leadsRef = companyRef.collection('leads');
-        const columnsDocRef = companyRef.collection('kanban_settings').doc('columns');
-        const columnsDoc = await columnsDocRef.get();
-        if (!columnsDoc.exists)
-          throw new Error(`Configuração de colunas não encontrada para a empresa ${companyId}.`);
-
-        const conclusionStatusNames = columnsDoc
-          .data()
-          .list.filter(
-            (c) => c.type === 'positive_conclusion' || c.type === 'negative_conclusion'
-          )
-          .map((c) => c.name);
-
-        // busca lead ativo
-        const activeLeadQuery = leadsRef
-          .where('phoneNumber', '==', fromNumber)
-          .where(
-            'status',
-            'not-in',
-            conclusionStatusNames.length > 0
-              ? conclusionStatusNames
-              : ['dummy_status_to_avoid_empty_error']
-          );
-        const activeLeadSnapshot = await activeLeadQuery.get();
-
-        let leadDocRef, leadId;
-        if (!activeLeadSnapshot.empty) {
-          const existingLeadDoc = activeLeadSnapshot.docs[0];
-          leadDocRef = existingLeadDoc.ref;
-          leadId = existingLeadDoc.id;
-          console.log(`[Webhook] Lead ativo encontrado (${leadId}). Adicionando mensagem.`);
-          // Atualiza o timestamp para o valor do servidor
-          await leadDocRef.update({
-            lastMessage: messageText,
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          });
-        } else {
-          console.log(
-            `[Webhook] Nenhum lead ativo encontrado para ${fromNumber}. Criando um novo lead.`
-          );
-          const initialStatus =
-            columnsDoc.data().list.find((c) => c.type === 'initial')?.name || 'Em Contato';
-          const newLeadDocRef = await leadsRef.add({
-            name: contactName,
-            phoneNumber: fromNumber,
-            status: initialStatus,
-            lastMessage: messageText,
-            // Usa o serverTimestamp para ambos os campos de data
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            dateCreated: admin.firestore.FieldValue.serverTimestamp(), 
-            source: 'whatsapp',
-            tags: [],
-            details: { painPoints: '', solutionNotes: '', nextSteps: '' },
-            interestSummary: '',
-          });
-          leadId = newLeadDocRef.id;
-          leadDocRef = newLeadDocRef;
-        }
-
-        const messagesRef = leadDocRef.collection('messages');
-        await messagesRef.add({
-          from: 'contact',
-          text: messageText,
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        });
-
-        // Envia para o n8n para que o agente possa processar
-      const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
-
-      // --- LINHA DE DEPURAÇÃO ---
-      console.log(`[DEPURAÇÃO] Valor lido da N8N_WEBHOOK_URL: ${n8nWebhookUrl}`);
-
-      if (n8nWebhookUrl) {
-        console.log(`[WEBHOOK] Encaminhando dados para o n8n para o lead ${leadId}`);
-        
-        try {
-          await axios.post(n8nWebhookUrl, { 
-            messageData: {
-                from: fromNumber,
-                name: contactName,
-                text: messageText,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            },
-            leadId: leadId,
-            companyId: companyId
-          });
-        } catch (n8nError) {
-          console.error("[WEBHOOK] Erro ao encaminhar para o n8n:", n8nError.message);
-        }
-      } else {
-        // --- AVISO DE DEPURAÇÃO ---
-        console.log("[DEPURAÇÃO] A variável n8nWebhookUrl está vazia ou não foi encontrada, por isso o envio para o n8n foi pulado.");
-      }
-      }
-    } else {
-      console.log('Webhook recebido mas não é mensagem. Ignorando.');
-    }
-  } catch (error) {
-    console.error('Erro ao processar webhook:', error);
-  }
-});
-
-app.get('/api/whatsapp/webhook', (req, res) => {
-    const verify_token = process.env.WHATSAPP_VERIFY_TOKEN;
-    const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
-    if (mode === 'subscribe' && token === verify_token) {
-        console.log('WEBHOOK_VERIFIED');
-        res.status(200).send(challenge);
-    } else {
-        res.sendStatus(403);
-    }
-});
-
-// =================================================================================
-// --- OUTRAS ROTAS (ANÁLISE, AUTOMAÇÃO, ETC.) ---
-// =================================================================================
-app.post('/api/analise/gemini', async (req, res) => {
-    const { textToAnalyze } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) return res.status(500).json({ error: 'Chave de API do Gemini não configurada.' });
-    if (!textToAnalyze) return res.status(400).json({ error: 'Nenhum texto para analisar foi fornecido.' });
-
-    const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
-    const prompt = `Analise o seguinte texto de uma conversa com um cliente e identifique: 1. O principal sentimento (positivo, negativo, neutro). 2. O principal problema ou necessidade do cliente. 3. Sugestões de melhoria para o atendimento. 4. Qual seria o próximo passo ideal para o time de vendas ou suporte. Responda em formato de JSON com as chaves "sentimento", "problema", "sugestoes" (array de strings) e "proximo_passo". O texto a ser analisado é: "${textToAnalyze}"`;
-    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } };
-
-    try {
-        const response = await axios.post(`${API_URL}?key=${apiKey}`, payload);
-        let geminiTextResponse = response.data.candidates[0].content.parts[0].text;
-        const jsonMatch = geminiTextResponse.match(/\{[\s\S]*\}/);
-        if (jsonMatch && jsonMatch[0]) geminiTextResponse = jsonMatch[0];
-        const jsonResponse = JSON.parse(geminiTextResponse);
-        res.status(200).json(jsonResponse);
-    } catch (error) {
-        console.error("Erro na API do Gemini:", error.response ? error.response.data : error.message);
-        if (error.response && error.response.status === 429) return res.status(429).json({ error: "Cota de uso da API do Gemini excedida." });
-        res.status(500).json({ error: "Falha ao se comunicar com a IA." });
-    }
-});
-
-app.post('/api/automations/execute', async (req, res) => {
-  const { secret } = req.body;
-  if (secret !== process.env.CRON_JOB_SECRET) {
-    return res.status(401).send('Acesso não autorizado.');
-  }
-
-  console.log('[AUTOMATION] Iniciando execução das automações...');
-  const companyId = '3bHx7UfBFve1907kwqqT'; // Fixo por enquanto
-
-  try {
-    const companyRef = db.collection('companies').doc(companyId);
-    // Referência para a nova coleção de logs
-    const automationLogsRef = companyRef.collection('automation_logs'); 
-    
-    const automationsRef = companyRef.collection('automations');
-    const qAutomations = automationsRef.where('isActive', '==', true);
-    const automationsSnapshot = await qAutomations.get();
-
-    if (automationsSnapshot.empty) {
-      console.log('[AUTOMATION] Nenhuma regra de automação ativa para executar.');
-      return res.status(200).send('Nenhuma regra de automação ativa encontrada.');
-    }
-
-    const companyData = (await companyRef.get()).data();
-    const { whatsappAccessToken: accessToken, whatsappPhoneNumberId: fromPhoneNumberId } = companyData;
-
-    if (!accessToken || !fromPhoneNumberId) {
-      console.error(`[AUTOMATION] Credenciais do WhatsApp não encontradas para a empresa ${companyId}. Abortando.`);
-      await automationLogsRef.add({
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        ruleName: 'Verificação Geral',
-        status: 'Falha Crítica',
-        details: `As credenciais do WhatsApp não foram encontradas. A execução foi abortada.`
-      });
-      return res.status(500).send('Credenciais do WhatsApp não configuradas.');
-    }
-
-    for (const ruleDoc of automationsSnapshot.docs) {
-      const rule = ruleDoc.data();
-      console.log(`[AUTOMATION] Processando regra: "${rule.name}"`);
-
-      if (rule.triggerType === 'time_in_status') {
-        const { columnName, days } = rule.triggerValue;
-        const messageTemplate = rule.actionValue.message;
-        const targetDate = new Date();
-        targetDate.setDate(targetDate.getDate() - days);
-
-        const leadsRef = companyRef.collection('leads');
-        const qLeads = leadsRef
-          .where('status', '==', columnName)
-          .where('timestamp', '<=', targetDate);
-
-        const leadsSnapshot = await qLeads.get();
-
-        if (leadsSnapshot.empty) {
-          console.log(`[AUTOMATION] Nenhum lead encontrado para a regra "${rule.name}".`);
-          continue;
-        }
-
-        console.log(`[AUTOMATION] ${leadsSnapshot.size} leads encontrados para a regra "${rule.name}". Disparando ações...`);
-
-        for (const leadDoc of leadsSnapshot.docs) {
-          const lead = leadDoc.data();
-          
-          try {
-            if (!lead.phoneNumber) {
-              // Lança um erro para ser pego pelo bloco catch e logado
-              throw new Error('Lead sem número de telefone.');
-            }
-  
-            const message = messageTemplate.replace(/\[Nome do Lead\]/g, lead.name);
-            
-            const url = `https://graph.facebook.com/v19.0/${fromPhoneNumberId}/messages`;
-            const data = {
-              messaging_product: 'whatsapp', to: lead.phoneNumber, type: 'text',
-              text: { preview_url: false, body: message },
-            };
-            const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
-            
-            await axios.post(url, data, { headers });
-            
-            // LOG DE SUCESSO
-            await automationLogsRef.add({
-              timestamp: admin.firestore.FieldValue.serverTimestamp(),
-              ruleId: ruleDoc.id, ruleName: rule.name, leadId: leadDoc.id, leadName: lead.name,
-              status: 'Sucesso',
-              details: `Mensagem de automação enviada para ${lead.name} (${lead.phoneNumber}).`
-            });
-            console.log(`[AUTOMATION LOG] Sucesso: Mensagem enviada para ${lead.name}.`);
-            
-            // Atualiza o timestamp do lead para reiniciar a contagem de inatividade
-            await leadDoc.ref.update({ timestamp: admin.firestore.FieldValue.serverTimestamp() });
-
-          } catch (error) {
-            // LOG DE FALHA
-            const errorMessage = error.response ? JSON.stringify(error.response.data) : error.message;
-            await automationLogsRef.add({
-              timestamp: admin.firestore.FieldValue.serverTimestamp(),
-              ruleId: ruleDoc.id, ruleName: rule.name, leadId: leadDoc.id, leadName: lead.name || 'Nome não encontrado',
-              status: 'Falha',
-              details: `Erro ao processar ação: ${errorMessage}`
-            });
-            console.error(`[AUTOMATION LOG] Falha ao processar ${lead.name || leadDoc.id}: ${errorMessage}`);
-          }
-        }
-      }
-    }
-
-    console.log('[AUTOMATION] Execução das automações concluída.');
-    res.status(200).send('Automações executadas com sucesso.');
-
-  } catch (error) {
-    console.error('[AUTOMATION] Erro geral ao executar automações:', error);
-    res.status(500).send('Erro no servidor ao executar automações.');
-  }
-});
-
-app.post('/api/perform-daily-snapshot', async (req, res) => {
-  const { secret } = req.body;
-  if (secret !== process.env.CRON_JOB_SECRET) {
-    return res.status(401).send('Acesso não autorizado.');
-  }
-
-  const companyId = '3bHx7UfBFve1907kwqqT';
-  const today = new Date();
-  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-
-  try {
-    console.log('[CRON DIÁRIO] Iniciando snapshot de performance diária...');
-    const companiesRef = db.collection('companies').doc(companyId);
-    
-    const columnsDocRef = companiesRef.collection('kanban_settings').doc('columns');
-    const columnsDoc = await columnsDocRef.get();
-    if (!columnsDoc.exists) {
-      throw new Error('Configuração de colunas não encontrada.');
-    }
-    
-    const positiveConclusionStatusNames = columnsDoc.data().list
-      .filter(c => c.type === 'positive_conclusion')
-      .map(c => c.name);
-
-    const leadsRef = companiesRef.collection('leads');
-    let todaysQualifiedCount = 0;
-    if (positiveConclusionStatusNames.length > 0) {
-      // LÓGICA ATUALIZADA: Adiciona a verificação do status atual
-      const qQualified = leadsRef
-        .where('qualificationDate', '>=', startOfDay)
-        .where('qualificationDate', '<', endOfDay)
-        .where('status', 'in', positiveConclusionStatusNames); // <-- NOVA CONDIÇÃO
-
-      const qualifiedSnapshot = await qQualified.get();
-      todaysQualifiedCount = qualifiedSnapshot.size;
-    }
-
-    const qNew = leadsRef
-      .where('dateCreated', '>=', startOfDay) // Corrigido
-      .where('dateCreated', '<', endOfDay); // Corrigido
-    const newLeadsSnapshot = await qNew.get();
-    const todaysNewLeadsCount = newLeadsSnapshot.size;
-
-    console.log(`[CRON DIÁRIO] Leads Captados Hoje: ${todaysNewLeadsCount}`);
-    console.log(`[CRON DIÁRIO] Leads Qualificados Hoje (Status Final): ${todaysQualifiedCount}`);
-
-    const performanceRef = companiesRef.collection('daily_performance').doc(startOfDay.toISOString().slice(0, 10));
-    await performanceRef.set({
-      date: startOfDay,
-      qualifiedCount: todaysQualifiedCount,
-      newLeadsCount: todaysNewLeadsCount
-    });
-
-    console.log('[CRON DIÁRIO] Snapshot de performance diária concluído com sucesso.');
-    res.status(200).send('Snapshot concluído com sucesso.');
-
-  } catch (error) {
-    console.error('[CRON DIÁRIO] Erro ao executar o snapshot diário:', error);
-    res.status(500).send('Erro no servidor ao executar snapshot.');
-  }
-});
-
-// =================================================================================
-// --- ROTAS PARA EVOLUTION API (QR CODE) ---
-// =================================================================================
-
-// URL e Chave da sua instância da Evolution API (lidas do .env)
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
-
-app.post('/api/evolution/send-message', isAuthorized, async (req, res) => {
   const { recipientId, message, companyId, leadId } = req.body;
   if (!recipientId || !message || !companyId || !leadId) {
     return res.status(400).json({ error: 'recipientId, message, companyId e leadId são obrigatórios.' });
   }
 
-  // LÓGICA DE FORMATAÇÃO ROBUSTA DO NÚMERO
-  let formattedRecipient = recipientId.replace(/\D/g, ''); // Remove todos os não-dígitos
+  let formattedRecipient = recipientId.replace(/\D/g, '');
   if (!formattedRecipient.startsWith('55')) {
-    formattedRecipient = `55${formattedRecipient}`; // Garante o código do país
+    formattedRecipient = `55${formattedRecipient}`;
   }
-  // Adiciona o sufixo @c.us, que é o formato padrão para contatos individuais
   const recipientJid = `${formattedRecipient}@c.us`;
 
   try {
     const url = `${EVOLUTION_API_URL}/message/sendText/${process.env.EVOLUTION_INSTANCE_NAME || 'CRM_V1'}`;
     const data = {
-      number: recipientJid, // <-- USA O NÚMERO FORMATADO
+      number: recipientJid,
       options: {
         delay: 1200,
         presence: "composing"
@@ -620,11 +214,10 @@ async function handleMediaUpload(messageData) {
     console.log('[MEDIA HELPER] Download concluído. Fazendo upload...');
     const buffer = Buffer.from(base64Data, 'base64');
 
-    // LÓGICA ATUALIZADA para incluir figurinhas e padronizar documentos
     const mimeType = messageDetails.imageMessage?.mimetype || messageDetails.audioMessage?.mimetype || messageDetails.videoMessage?.mimetype || messageDetails.documentMessage?.mimetype || messageDetails.stickerMessage?.mimetype || 'application/octet-stream';
     let mediaType = mimeType.split('/')[0];
-    if (mediaType === 'application') mediaType = 'document'; // Padroniza 'application' para 'document'
-    if (mimeType.includes('webp')) mediaType = 'image'; // Trata figurinhas .webp como imagem
+    if (mediaType === 'application') mediaType = 'document';
+    if (mimeType.includes('webp')) mediaType = 'image';
 
     const fileExtension = mimeType.split('/')[1]?.split(';')[0] || 'bin';
     const fileName = `media/${Date.now()}.${fileExtension}`;
@@ -646,7 +239,6 @@ app.post('/api/evolution/webhook', async (req, res) => {
   const eventData = req.body;
   res.status(200).send('Webhook recebido.');
   
-  // Imprime apenas o nome do evento para um log mais limpo
   console.log(`[EVOLUTION WEBHOOK] Evento recebido: ${eventData.event}`);
 
   if (eventData.event === 'connection.update') {
@@ -674,7 +266,6 @@ app.post('/api/evolution/webhook', async (req, res) => {
       const contactNumber = messageData.key.remoteJid.split('@')[0];
       const messageDetails = messageData.message;
       
-      // LÓGICA FINAL DE CAPTURA DE NOME: Usa o pushName como fonte principal.
       const contactName = messageData.pushName || contactNumber;
       
       const companyId = '3bHx7UfBFve1907kwqqT';
@@ -738,252 +329,211 @@ app.post('/api/evolution/webhook', async (req, res) => {
   }
 });
 
-app.get('/api/evolution/instance/qr/:instanceName', isAuthorized, async (req, res) => {
-  const { instanceName } = req.params;
-  if (!instanceName) {
-    return res.status(400).json({ error: 'O nome da instância é obrigatório.' });
-  }
-
-  try {
-    console.log(`[QR Code] Buscando QR Code para a instância: ${instanceName}`);
-    
-    // Este é o endpoint da Evolution API para gerar/buscar o QR Code
-    const url = `${EVOLUTION_API_URL}/instance/connect/${instanceName}`;
-    
-    const headers = {
-      'apikey': EVOLUTION_API_KEY
-    };
-
-    const response = await axios.get(url, { headers });
-
-    // A Evolution API retorna os dados do QR Code em um campo chamado "base64"
-    const qrCodeBase64 = response.data.base64;
-
-    if (qrCodeBase64) {
-      console.log(`[QR Code] QR Code (base64) encontrado para ${instanceName}.`);
-      res.status(200).json({ qrCodeBase64: qrCodeBase64 });
+app.get('/api/whatsapp/webhook', (req, res) => {
+    const verify_token = process.env.WHATSAPP_VERIFY_TOKEN;
+    const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
+    if (mode === 'subscribe' && token === verify_token) {
+        console.log('WEBHOOK_VERIFIED');
+        res.status(200).send(challenge);
     } else {
-       // Isso pode acontecer se a instância já estiver conectada
-      console.log(`[QR Code] Nenhum QR Code retornado. A instância ${instanceName} pode já estar conectada.`);
-      res.status(200).json({ message: 'Instância já conectada ou aguardando geração de QR Code.' });
+        res.sendStatus(403);
     }
-
-  } catch (error) {
-    console.error(`[QR Code] Falha ao buscar QR Code para ${instanceName}:`, error.response ? error.response.data : error.message);
-    res.status(500).json({ error: 'Falha ao buscar o QR Code da Evolution API.' });
-  }
 });
 
-app.get('/api/evolution/instance/status/:instanceName', isAuthorized, async (req, res) => {
-  const { instanceName } = req.params;
-  const { companyId } = req.query; // Recebendo o companyId pela query
+app.post('/api/analise/gemini', async (req, res) => {
+    const { textToAnalyze } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
 
-  try {
-    const url = `${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`;
-    const headers = { 'apikey': EVOLUTION_API_KEY };
-    const response = await axios.get(url, { headers });
+    if (!apiKey) return res.status(500).json({ error: 'Chave de API do Gemini não configurada.' });
+    if (!textToAnalyze) return res.status(400).json({ error: 'Nenhum texto para analisar foi fornecido.' });
 
-    const connectionState = response.data.state; // ex: "CONNECTED" ou "DISCONNECTED"
+    const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
+    const prompt = `Analise o seguinte texto de uma conversa com um cliente e identifique: 1. O principal sentimento (positivo, negativo, neutro). 2. O principal problema ou necessidade do cliente. 3. Sugestões de melhoria para o atendimento. 4. Qual seria o próximo passo ideal para o time de vendas ou suporte. Responda em formato de JSON com as chaves "sentimento", "problema", "sugestoes" (array de strings) e "proximo_passo". O texto a ser analisado é: "${textToAnalyze}"`;
+    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } };
 
-    // Se a conexão for bem-sucedida, atualizamos nosso banco de dados!
-    if (connectionState === 'CONNECTED' && companyId) {
-      console.log(`[Status] Instância ${instanceName} conectada. Atualizando Firestore para companyId: ${companyId}`);
-      const companyRef = db.collection('companies').doc(companyId);
-      await companyRef.update({ whatsappConnected: true });
+    try {
+        const response = await axios.post(`${API_URL}?key=${apiKey}`, payload);
+        let geminiTextResponse = response.data.candidates[0].content.parts[0].text;
+        const jsonMatch = geminiTextResponse.match(/\{[\s\S]*\}/);
+        if (jsonMatch && jsonMatch[0]) geminiTextResponse = jsonMatch[0];
+        const jsonResponse = JSON.parse(geminiTextResponse);
+        res.status(200).json(jsonResponse);
+    } catch (error) {
+        console.error("Erro na API do Gemini:", error.response ? error.response.data : error.message);
+        if (error.response && error.response.status === 429) return res.status(429).json({ error: "Cota de uso da API do Gemini excedida." });
+        res.status(500).json({ error: "Falha ao se comunicar com a IA." });
     }
-
-    res.status(200).json({ status: connectionState });
-
-  } catch (error) {
-    console.error(`[Status] Falha ao buscar status para ${instanceName}:`, error.message);
-    res.status(500).json({ error: 'Falha ao buscar o status da instância.' });
-  }
 });
 
-app.post('/api/evolution/instance/logout', isAuthorized, async (req, res) => {
-  const { instanceName, companyId } = req.body;
-  
+app.post('/api/automations/execute', async (req, res) => {
+  const { secret } = req.body;
+  if (secret !== process.env.CRON_JOB_SECRET) {
+    return res.status(401).send('Acesso não autorizado.');
+  }
+
+  console.log('[AUTOMATION] Iniciando execução das automações...');
+  const companyId = '3bHx7UfBFve1907kwqqT';
+
   try {
-    console.log(`[LOGOUT] Desconectando a instância: ${instanceName}`);
-    
-    const url = `${EVOLUTION_API_URL}/instance/logout/${instanceName}`;
-    const headers = { 'apikey': EVOLUTION_API_KEY };
-
-    await axios.delete(url, { headers }); // O logout é geralmente um método DELETE
-
-    // Se o logout na API foi bem-sucedido, atualiza nosso banco de dados
     const companyRef = db.collection('companies').doc(companyId);
-    await companyRef.update({ whatsappConnected: false });
-
-    console.log(`[LOGOUT] Instância ${instanceName} desconectada e Firestore atualizado.`);
-    res.status(200).json({ success: true, message: 'Instância desconectada com sucesso.' });
-
-  } catch (error) {
-    console.error(`[LOGOUT] Falha ao desconectar instância ${instanceName}:`, error.message);
-    res.status(500).json({ error: 'Falha ao desconectar a instância.' });
-  }
-});
-
-// =================================================================================
-// --- ROTA PARA CALCULADORA DE VENDAS ---
-// =================================================================================
-
-// server.js -> Substitua a rota da calculadora por esta versão completa
-
-app.post('/api/calculator/simulate', isAuthorized, async (req, res) => {
-  try {
-    const {
-      valorImovel,
-      valorFinanciamento,
-      prazo,
-      rendaBruta,
-      sistemaAmortizacao,
-      indexador,
-      proponente
-    } = req.body;
-
-    const taxaJurosAnual = 0.085;
-    const taxaJurosMensal = Math.pow(1 + taxaJurosAnual, 1/12) - 1;
+    const automationLogsRef = companyRef.collection('automation_logs'); 
     
-    let primeiraPrestacao = 0;
-    const parcelas = [];
-    let saldoDevedor = valorFinanciamento;
-    
-    // NOVO: Define a data de início para o cálculo das parcelas
-    const dataSimulacao = new Date();
+    const automationsRef = companyRef.collection('automations');
+    const qAutomations = automationsRef.where('isActive', '==', true);
+    const automationsSnapshot = await qAutomations.get();
 
-    if (sistemaAmortizacao === 'PRICE') {
-      const pmt = (valorFinanciamento * Math.pow(1 + taxaJurosMensal, prazo) * taxaJurosMensal) / (Math.pow(1 + taxaJurosMensal, prazo) - 1);
-      primeiraPrestacao = pmt;
-      for (let i = 1; i <= prazo; i++) {
-        const juros = saldoDevedor * taxaJurosMensal;
-        const amortizacao = pmt - juros;
-        saldoDevedor -= amortizacao;
-        
-        // NOVO: Calcula a data de vencimento de cada parcela
-        const dataVencimento = new Date(dataSimulacao.getFullYear(), dataSimulacao.getMonth() + i, dataSimulacao.getDate());
+    if (automationsSnapshot.empty) {
+      console.log('[AUTOMATION] Nenhuma regra de automação ativa para executar.');
+      return res.status(200).send('Nenhuma regra de automação ativa encontrada.');
+    }
 
-        parcelas.push({
-          mes: i,
-          dataVencimento: dataVencimento.toISOString(), // <-- Adiciona a data
-          valor: pmt.toFixed(2),
-          juros: juros.toFixed(2),
-          amortizacao: amortizacao.toFixed(2),
-          saldoDevedor: saldoDevedor.toFixed(2)
-        });
-      }
-    } else if (sistemaAmortizacao === 'SAC') {
-      const amortizacao = valorFinanciamento / prazo;
-      for (let i = 1; i <= prazo; i++) {
-        const juros = saldoDevedor * taxaJurosMensal;
-        const pmt = amortizacao + juros;
-        if (i === 1) {
-          primeiraPrestacao = pmt;
+    const companyData = (await companyRef.get()).data();
+    const { whatsappAccessToken: accessToken, whatsappPhoneNumberId: fromPhoneNumberId } = companyData;
+
+    if (!accessToken || !fromPhoneNumberId) {
+      console.error(`[AUTOMATION] Credenciais do WhatsApp não encontradas para a empresa ${companyId}. Abortando.`);
+      await automationLogsRef.add({
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        ruleName: 'Verificação Geral',
+        status: 'Falha Crítica',
+        details: `As credenciais do WhatsApp não foram encontradas. A execução foi abortada.`
+      });
+      return res.status(500).send('Credenciais do WhatsApp não configuradas.');
+    }
+
+    for (const ruleDoc of automationsSnapshot.docs) {
+      const rule = ruleDoc.data();
+      console.log(`[AUTOMATION] Processando regra: "${rule.name}"`);
+
+      if (rule.triggerType === 'time_in_status') {
+        const { columnName, days } = rule.triggerValue;
+        const messageTemplate = rule.actionValue.message;
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() - days);
+
+        const leadsRef = companyRef.collection('leads');
+        const qLeads = leadsRef
+          .where('status', '==', columnName)
+          .where('timestamp', '<=', targetDate);
+
+        const leadsSnapshot = await qLeads.get();
+
+        if (leadsSnapshot.empty) {
+          console.log(`[AUTOMATION] Nenhum lead encontrado para a regra "${rule.name}".`);
+          continue;
         }
-        saldoDevedor -= amortizacao;
 
-        // NOVO: Calcula a data de vencimento de cada parcela
-        const dataVencimento = new Date(dataSimulacao.getFullYear(), dataSimulacao.getMonth() + i, dataSimulacao.getDate());
-        
-        parcelas.push({
-          mes: i,
-          dataVencimento: dataVencimento.toISOString(), // <-- Adiciona a data
-          valor: pmt.toFixed(2),
-          juros: juros.toFixed(2),
-          amortizacao: amortizacao.toFixed(2),
-          saldoDevedor: saldoDevedor.toFixed(2)
-        });
+        console.log(`[AUTOMATION] ${leadsSnapshot.size} leads encontrados para a regra "${rule.name}". Disparando ações...`);
+
+        for (const leadDoc of leadsSnapshot.docs) {
+          const lead = leadDoc.data();
+          
+          try {
+            if (!lead.phoneNumber) {
+              throw new Error('Lead sem número de telefone.');
+            }
+  
+            const message = messageTemplate.replace(/\[Nome do Lead\]/g, lead.name);
+            
+            const url = `https://graph.facebook.com/v19.0/${fromPhoneNumberId}/messages`;
+            const data = {
+              messaging_product: 'whatsapp', to: lead.phoneNumber, type: 'text',
+              text: { preview_url: false, body: message },
+            };
+            const headers = { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
+            
+            await axios.post(url, data, { headers });
+            
+            await automationLogsRef.add({
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+              ruleId: ruleDoc.id, ruleName: rule.name, leadId: leadDoc.id, leadName: lead.name,
+              status: 'Sucesso',
+              details: `Mensagem de automação enviada para ${lead.name} (${lead.phoneNumber}).`
+            });
+            console.log(`[AUTOMATION LOG] Sucesso: Mensagem enviada para ${lead.name}.`);
+            
+            await leadDoc.ref.update({ timestamp: admin.firestore.FieldValue.serverTimestamp() });
+
+          } catch (error) {
+            const errorMessage = error.response ? JSON.stringify(error.response.data) : error.message;
+            await automationLogsRef.add({
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+              ruleId: ruleDoc.id, ruleName: rule.name, leadId: leadDoc.id, leadName: lead.name || 'Nome não encontrado',
+              status: 'Falha',
+              details: `Erro ao processar ação: ${errorMessage}`
+            });
+            console.error(`[AUTOMATION LOG] Falha ao processar ${lead.name || leadDoc.id}: ${errorMessage}`);
+          }
+        }
       }
     }
 
-    const comprometimentoRenda = (primeiraPrestacao / rendaBruta) * 100;
-    let statusAvaliacao = "Avaliação de Risco Aprovada";
-    if (comprometimentoRenda > 30) {
-      statusAvaliacao = "Reprovada (Renda Comprometida)";
-    }
-    
-    const resultado = {
-      nomeProponente: proponente?.name || 'Não informado',
-      cpfProponente: proponente?.cpf || 'Não informado',
-      statusAvaliacao: statusAvaliacao,
-      valorImovel: Number(valorImovel),
-      valorFinanciamento: Number(valorFinanciamento),
-      prestacao: primeiraPrestacao,
-      prazo: Number(prazo),
-      sistemaAmortizacao: sistemaAmortizacao,
-      indexador: indexador,
-      rendaBruta: Number(rendaBruta),
-      validade: `${new Date().toLocaleDateString('pt-BR')} a ${new Date(new Date().setMonth(new Date().getMonth() + 6)).toLocaleDateString('pt-BR')}`,
-      parcelas: parcelas
-    };
-
-    res.status(200).json(resultado);
+    console.log('[AUTOMATION] Execução das automações concluída.');
+    res.status(200).send('Automações executadas com sucesso.');
 
   } catch (error) {
-    console.error('[CALCULATOR] Erro ao simular:', error);
-    res.status(500).json({ error: 'Falha ao processar a simulação.' });
+    console.error('[AUTOMATION] Erro geral ao executar automações:', error);
+    res.status(500).send('Erro no servidor ao executar automações.');
   }
 });
 
-app.post('/api/generate-weekly-insights', async (req, res) => {
+app.post('/api/perform-daily-snapshot', async (req, res) => {
   const { secret } = req.body;
   if (secret !== process.env.CRON_JOB_SECRET) {
     return res.status(401).send('Acesso não autorizado.');
   }
 
   const companyId = '3bHx7UfBFve1907kwqqT';
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'Chave de API do Gemini não configurada.' });
+  const today = new Date();
+  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 
   try {
-    console.log('[CRON] Iniciando geração de insights semanais...');
+    console.log('[CRON DIÁRIO] Iniciando snapshot de performance diária...');
+    const companiesRef = db.collection('companies').doc(companyId);
     
-    // 1. Coleta de dados da última semana
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-    const leadsRef = db.collection('companies').doc(companyId).collection('leads');
+    const columnsDocRef = companiesRef.collection('kanban_settings').doc('columns');
+    const columnsDoc = await columnsDocRef.get();
+    if (!columnsDoc.exists) {
+      throw new Error('Configuração de colunas não encontrada.');
+    }
     
-    // Novos leads na semana
-    const newLeadsQuery = leadsRef.where('dateCreated', '>=', sevenDaysAgo);
-    const newLeadsSnapshot = await newLeadsQuery.get();
-    const newLeadsCount = newLeadsSnapshot.size;
+    const positiveConclusionStatusNames = columnsDoc.data().list
+      .filter(c => c.type === 'positive_conclusion')
+      .map(c => c.name);
 
-    // Leads qualificados na semana
-    const qualifiedLeadsQuery = leadsRef.where('qualificationDate', '>=', sevenDaysAgo);
-    const qualifiedLeadsSnapshot = await qualifiedLeadsQuery.get();
-    const qualifiedLeadsCount = qualifiedLeadsSnapshot.size;
+    const leadsRef = companiesRef.collection('leads');
+    let todaysQualifiedCount = 0;
+    if (positiveConclusionStatusNames.length > 0) {
+      const qQualified = leadsRef
+        .where('qualificationDate', '>=', startOfDay)
+        .where('qualificationDate', '<', endOfDay)
+        .where('status', 'in', positiveConclusionStatusNames);
 
-    const dataSummary = `- Novos leads nos últimos 7 dias: ${newLeadsCount}\n- Leads qualificados nos últimos 7 dias: ${qualifiedLeadsCount}`;
-    console.log(`[CRON] Dados para análise: ${dataSummary.replace('\n', ' | ')}`);
-
-    // 2. Criação do Prompt e chamada à API do Gemini
-    const prompt = `Você é um analista de vendas sênior para uma plataforma de CRM. Analise os seguintes dados de performance da última semana:\n\n${dataSummary}\n\nGere 2 insights curtos, práticos e acionáveis para um gerente de vendas. A resposta DEVE ser um array JSON de strings. Exemplo: ["O número de novos leads aumentou 15%, capitalize nisso.", "A taxa de qualificação está em 50%, foque em treinar a equipe para melhorar a abordagem inicial."]`;
+      const qualifiedSnapshot = await qQualified.get();
+      todaysQualifiedCount = qualifiedSnapshot.size;
+    }
     
-    const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
-    const payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } };
-    const geminiResponse = await axios.post(`${API_URL}?key=${apiKey}`, payload);
-    
-    let geminiTextResponse = geminiResponse.data.candidates[0].content.parts[0].text;
-    const jsonMatch = geminiTextResponse.match(/\[[\s\S]*\]/); // Encontra o array JSON na resposta
-    if (!jsonMatch || !jsonMatch[0]) throw new Error("A IA não retornou um array JSON válido.");
+    const qNew = leadsRef.where('dateCreated', '>=', startOfDay).where('dateCreated', '<', endOfDay);
+    const newLeadsSnapshot = await qNew.get();
+    const todaysNewLeadsCount = newLeadsSnapshot.size;
 
-    const insightsArray = JSON.parse(jsonMatch[0]);
-    console.log('[CRON] Insights recebidos da IA:', insightsArray);
+    console.log(`[CRON DIÁRIO] Leads Captados Hoje: ${todaysNewLeadsCount}`);
+    console.log(`[CRON DIÁRIO] Leads Qualificados Hoje (Status Final): ${todaysQualifiedCount}`);
 
-    // 3. Salva os insights no Firestore
-    const insightsRef = db.collection('companies').doc(companyId).collection('insights');
-    await insightsRef.add({
-      insights: insightsArray, // Salva o array de insights
-      generatedAt: admin.firestore.FieldValue.serverTimestamp()
+    const performanceRef = companiesRef.collection('daily_performance').doc(startOfDay.toISOString().slice(0, 10));
+    await performanceRef.set({
+      date: admin.firestore.FieldValue.serverTimestamp(),
+      qualifiedCount: todaysQualifiedCount,
+      newLeadsCount: todaysNewLeadsCount
     });
 
-    console.log('[CRON] Insights semanais gerados e salvos com sucesso.');
-    res.status(200).send('Insights gerados com sucesso.');
+    console.log('[CRON DIÁRIO] Snapshot de performance diária concluído com sucesso.');
+    res.status(200).send('Snapshot concluído com sucesso.');
 
   } catch (error) {
-    console.error('[CRON] Erro ao gerar insights semanais:', error.response ? error.response.data : error.message);
-    res.status(500).send('Erro no servidor ao gerar insights.');
+    console.error('[CRON DIÁRIO] Erro ao executar o snapshot diário:', error);
+    res.status(500).send('Erro no servidor ao executar snapshot.');
   }
 });
 
@@ -1021,23 +571,21 @@ app.post('/api/perform-monthly-snapshot', async (req, res) => {
       return res.status(200).send(`Nenhum dado diário para agregar em ${docId}.`);
     }
 
-    // LÓGICA DE AGREGAÇÃO ATUALIZADA
     let totalQualifiedInMonth = 0;
-    let totalNewLeadsInMonth = 0; // <-- NOVA VARIÁVEL
+    let totalNewLeadsInMonth = 0;
     dailySnapshots.forEach(doc => {
       totalQualifiedInMonth += doc.data().qualifiedCount || 0;
-      totalNewLeadsInMonth += doc.data().newLeadsCount || 0; // <-- SOMANDO O NOVO CAMPO
+      totalNewLeadsInMonth += doc.data().newLeadsCount || 0;
     });
     console.log(`[CRON MENSAL] Total de Leads Captados no mês: ${totalNewLeadsInMonth}`);
     console.log(`[CRON MENSAL] Total de Leads Qualificados no mês: ${totalQualifiedInMonth}`);
 
-    // SALVANDO AMBOS OS TOTAIS
     const monthlyPerformanceRef = db.collection('companies').doc(companyId).collection('monthly_performance').doc(docId);
     await monthlyPerformanceRef.set({
       year: year,
       month: month + 1,
       totalQualifiedCount: totalQualifiedInMonth,
-      totalNewLeadsCount: totalNewLeadsInMonth, // <-- NOVO CAMPO
+      totalNewLeadsInMonth: totalNewLeadsInMonth,
       lastUpdated: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 

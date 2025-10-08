@@ -6,7 +6,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyDgQGScK1MJcU9KOFKzKVaJaVxapGQfnu4",
   authDomain: "crm-plataform.firebaseapp.com",
   projectId: "crm-plataform",
-  storageBucket: "crm-plataform.firebasestorage.app",
+  storageBucket: "crm-plataform.appspot.com", // <-- corrigido aqui
   messagingSenderId: "588876286066",
   appId: "1:588876286066:web:ae5f253354de51662f9aeb",
   measurementId: "G-SMMFBZDKFG"

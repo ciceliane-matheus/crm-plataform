@@ -235,8 +235,10 @@ function MainApp() {
 
           // Configura o listener para os leads da empresa encontrada
           const leadsRef = collection(db, "companies", foundCompanyId, "leads");
-          // CORREÇÃO: Pega todos os leads e ordena no frontend para evitar crash
-          const unsubscribeLeads = onSnapshot(leadsRef, (querySnapshot) => {
+          // CORREÇÃO: Remove o orderBy do Firestore para evitar o crash
+          const q = query(leadsRef);
+          
+          const unsubscribeLeads = onSnapshot(q, (querySnapshot) => {
             const leadsArray = [];
             querySnapshot.forEach((doc) => {
               const data = doc.data();
@@ -261,7 +263,7 @@ function MainApp() {
               leadsArray.push({ id: doc.id, ...sanitizedData });
             });
 
-            // ORDENA A LISTA PELA DATA MAIS RECENTE
+            // ORDENA A LISTA PELA DATA MAIS RECENTE NO FRONTEND
             leadsArray.sort((a, b) => {
               const timestampA = a.timestamp || new Date(0);
               const timestampB = b.timestamp || new Date(0);
@@ -290,7 +292,6 @@ function MainApp() {
 
     return () => unsubscribeAuth();
   }, []);
-
 
   useEffect(() => {
     if (!companyId) return;
