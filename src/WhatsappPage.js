@@ -151,13 +151,10 @@ const WhatsappPage = ({ companyId, conversations: initialConversations, onArchiv
         if (!user) return;
         const token = await user.getIdToken();
 
-        const response = await axios.get(
-          `${BACKEND_URL}/api/evolution/instance/status/CRM_V1`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-            params: { companyId: companyId }
-          }
-        );
+        const response = await axios.get(`${BACKEND_URL}/api/evolution/instance/qr`, {
+          params: { companyId }, // O backend vai ler isso (req.query.companyId)
+          headers: { Authorization: `Bearer ${token}` } 
+        });
 
         // O backend já atualiza o Firestore. O onSnapshot listener vai cuidar de mudar o estado 'isConnected'
         if (response.data.status === 'CONNECTED') {
@@ -185,10 +182,10 @@ const WhatsappPage = ({ companyId, conversations: initialConversations, onArchiv
       const token = await user.getIdToken();
   
       const response = await axios.get(
-        `${BACKEND_URL}/api/evolution/instance/qr/CRM_V1`,
+        `${BACKEND_URL}/api/evolution/instance/qr`, // ⬅️ ROTA NOVA
         {
           headers: { Authorization: `Bearer ${token}` },
-          params: { companyId: companyId }
+          params: { companyId: companyId } // O backend já lê o companyId daqui
         }
       );
       
@@ -217,9 +214,9 @@ const WhatsappPage = ({ companyId, conversations: initialConversations, onArchiv
 
             // Chama a nova rota de logout no backend
             await axios.post(
-              `${BACKEND_URL}/api/evolution/instance/logout`,
+              `${BACKEND_URL}/api/evolution/instance/logout`, // (Presume que esta rota exista no backend, não a vi no server.js)
               { 
-                instanceName: 'CRM_V1', // Usando nossa instância fixa por enquanto
+                instanceName: `CRM_${companyId}`, // ⬅️ DINÂMICO
                 companyId: companyId 
               },
               { headers: { Authorization: `Bearer ${token}` } }

@@ -58,6 +58,114 @@ const isAuthorized = async (req, res, next) => {
 };
 
 // =================================================================================
+// --- NOVAS ROTAS DA EVOLUTION API ---
+// =================================================================================
+const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
+const EVOLUTION_INSTANCE_NAME = process.env.EVOLUTION_INSTANCE_NAME || 'CRM_V1';
+
+// =================================================================================
+// --- ROTA INTELIGENTE DE CRIAÇÃO/OBTENÇÃO DE QR CODE (DINÂMICO) ---
+// =================================================================================
+app.get('/api/evolution/instance/qr', isAuthorized, async (req, res) => {
+  const { companyId } = req.query;
+
+  // Validação essencial que o middleware 'isAuthorized' já espera
+  if (!companyId) {
+    return res.status(400).send('companyId é obrigatório na query.');
+  }
+
+  const instanceName = `CRM_${companyId}`; // 🔹 Instância única por empresa
+  console.log(`[EVOLUTION QR] Requisição de QR Code para a empresa: ${companyId} (instância: ${instanceName})`);
+
+  // Define os headers que serão usados em TODAS as chamadas
+  const headers = {
+    'Content-Type': 'application/json',
+    'apikey': EVOLUTION_API_KEY // 🔹 Pega a chave do .env
+  };
+
+  try {
+    // 1️⃣ Verifica se a instância existe
+    try {
+      // Tenta buscar a instância (requer 'apikey' no header)
+      await axios.get(`${EVOLUTION_API_URL}/instance/${instanceName}`, { headers });
+      console.log(`[EVOLUTION QR] Instância ${instanceName} já existe.`);
+      
+    } catch (err) {
+      // Se der 404 (Não encontrada), nós a criamos
+      if (err.response?.status === 404) {
+        console.log(`[EVOLUTION QR] Instância ${instanceName} não encontrada. Criando...`);
+        
+        // 🔹 AQUI É O PONTO CRÍTICO: Usar 'headers' no POST de criação
+        await axios.post(
+          `${EVOLUTION_API_URL}/instance/create`,
+          {
+            instanceName,
+            // Garante que o BACKEND_URL esteja no .env para o webhook
+            webhookUrl: `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/evolution/webhook/${companyId}`
+          },
+          { headers } // ⬅️ A AUTENTICAÇÃO QUE FALTAVA
+        );
+        console.log(`[EVOLUTION QR] Instância ${instanceName} criada com sucesso.`);
+      } else {
+        // Outro erro ao verificar (ex: 500 na Evolution, ou 401 se a key estiver errada)
+        throw err; 
+      }
+    }
+
+    // 2️⃣ Busca o QR Code (agora que sabemos que a instância existe)
+    const qrResponse = await axios.get(`${EVOLUTION_API_URL}/instance/qr/${instanceName}`, { headers });
+
+    // Se já estiver conectado
+    if (qrResponse.data.status === 'CONNECTED' || qrResponse.data.state === 'CONNECTED') {
+      await db.collection('companies').doc(companyId).update({ whatsappConnected: true });
+      return res.status(200).json({ status: 'CONNECTED', message: 'Instância já está conectada.' });
+    }
+
+    // Se houver QR Code
+    if (qrResponse.data.qrcode) {
+      return res.status(200).json({
+        qrCodeBase64: `data:image/png;base64,${qrResponse.data.qrcode}`
+      });
+    }
+
+    // Outro caso (ex: expirado)
+    return res.status(404).json({ error: 'QR Code não encontrado ou expirado.' });
+  
+  } catch (error) {
+    // Pega o erro 401 se a chave estiver errada, ou qualquer outro erro
+    const errorData = error.response ? error.response.data : error.message;
+    console.error(`[EVOLUTION QR] Erro geral:`, errorData);
+    
+    if (error.response?.status === 401) {
+         return res.status(401).json({ error: 'Falha na autenticação com a Evolution API. Verifique a EVOLUTION_API_KEY.' });
+    }
+    
+    res.status(500).json({ error: 'Falha ao buscar ou criar instância na Evolution API.' });
+  }
+});
+
+// Rota para verificar o status da instância da Evolution API (já implementada)
+app.get('/api/evolution/instance/status', isAuthorized, async (req, res) => {
+  const { companyId } = req.query;
+  try {
+    const instanceName = `CRM_${companyId}`;
+    const url = `${EVOLUTION_API_URL}/instance/status/${instanceName}`;
+    const headers = { 'apikey': EVOLUTION_API_KEY };
+    const response = await axios.get(url, { headers });
+    
+    // Atualiza o Firestore se a conexão estiver ativa
+    if (response.data.instance.status === 'CONNECTED') {
+      await db.collection('companies').doc(companyId).update({ whatsappConnected: true });
+    }
+    
+    res.status(200).json({ status: response.data.instance.status });
+  } catch (error) {
+    res.status(500).json({ error: 'Falha ao verificar status da Evolution API.' });
+  }
+});
+
+// =================================================================================
 // --- ROTAS DE ONBOARDING E GESTÃO DO WHATSAPP ---
 // =================================================================================
 app.post('/api/whatsapp/start-onboarding', async (req, res) => {
@@ -162,7 +270,8 @@ app.post('/api/whatsapp/send-message', isAuthorized, async (req, res) => {
   const recipientJid = `${formattedRecipient}@c.us`;
 
   try {
-    const url = `${EVOLUTION_API_URL}/message/sendText/${process.env.EVOLUTION_INSTANCE_NAME || 'CRM_V1'}`;
+    const instanceName = `CRM_${companyId}`;
+    const url = `${EVOLUTION_API_URL}/message/sendText/${instanceName}`;
     const data = {
       number: recipientJid,
       options: {
@@ -175,9 +284,10 @@ app.post('/api/whatsapp/send-message', isAuthorized, async (req, res) => {
     };
     
     const headers = {
-      'apikey': EVOLUTION_API_KEY,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'apikey': process.env.EVOLUTION_API_KEY
     };
+
 
     console.log(`[EVOLUTION SEND] Enviando para: ${recipientJid}`);
     await axios.post(url, data, { headers });
@@ -198,10 +308,11 @@ app.post('/api/whatsapp/send-message', isAuthorized, async (req, res) => {
   }
 });
 
-async function handleMediaUpload(messageData) {
+async function handleMediaUpload(messageData, companyId) { // 1. Recebe o companyId
+  const instanceName = `CRM_${companyId}`; // 2. Cria o nome dinâmico
   try {
     console.log('[MEDIA HELPER] Iniciando download da Evolution...');
-    const url = `${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/CRM_V1`;
+    const url = `${EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${instanceName}`; // 3. Usa o nome dinâmico
     const messageDetails = messageData.message;
     const messageId = messageData.key?.id;
     if (!messageId) throw new Error("Não foi possível encontrar um ID na chave da mensagem de mídia.");
@@ -235,26 +346,33 @@ async function handleMediaUpload(messageData) {
   }
 }
 
-app.post('/api/evolution/webhook', async (req, res) => {
+app.post('/api/evolution/webhook/:companyId', async (req, res) => {
   const eventData = req.body;
+  
+  // 2. PEGAMOS O 'companyId' QUE VEIO NA URL
+  const { companyId } = req.params; 
+
   res.status(200).send('Webhook recebido.');
   
-  console.log(`[EVOLUTION WEBHOOK] Evento recebido: ${eventData.event}`);
+  console.log(`[EVOLUTION WEBHOOK] Evento recebido: ${eventData.event} para ${companyId}`);
 
   if (eventData.event === 'connection.update') {
     const state = eventData.data.state;
-    const companyId = '3bHx7UfBFve1907kwqqT';
-    const companyRef = db.collection('companies').doc(companyId);
+    
+    // const companyId = '3bHx7UfBFve1907kwqqT'; // <-- REMOVIDO
+    
+    // 3. USA O 'companyId' DINÂMICO
+    const companyRef = db.collection('companies').doc(companyId); 
     try {
       if (state === 'CONNECTED' || state === 'open') {
         await companyRef.update({ whatsappConnected: true });
-        console.log(`[EVOLUTION WEBHOOK] Firestore atualizado: Conectado.`);
+        console.log(`[EVOLUTION WEBHOOK] Firestore atualizado: Conectado para ${companyId}.`);
       } else if (state === 'close') {
         await companyRef.update({ whatsappConnected: false });
-        console.log(`[EVOLUTION WEBHOOK] Firestore atualizado: Desconectado.`);
+        console.log(`[EVOLUTION WEBHOOK] Firestore atualizado: Desconectado para ${companyId}.`);
       }
     } catch(error) {
-      console.error("[EVOLUTION WEBHOOK] Erro ao atualizar status:", error);
+      console.error(`[EVOLUTION WEBHOOK] Erro ao atualizar status para ${companyId}:`, error);
     }
     return;
   }
@@ -268,7 +386,9 @@ app.post('/api/evolution/webhook', async (req, res) => {
       
       const contactName = messageData.pushName || contactNumber;
       
-      const companyId = '3bHx7UfBFve1907kwqqT';
+      // const companyId = '3bHx7UfBFve1907kwqqT'; // <-- REMOVIDO
+      
+      // 3. USA O 'companyId' DINÂMICO
       const leadsRef = db.collection('companies').doc(companyId).collection('leads');
       const leadQuery = await leadsRef.where('phone', '==', contactNumber).get();
 
@@ -279,7 +399,10 @@ app.post('/api/evolution/webhook', async (req, res) => {
       };
 
       if (messageDetails?.imageMessage || messageDetails?.audioMessage || messageDetails?.videoMessage || messageDetails?.documentMessage || messageDetails?.stickerMessage) {
-        const mediaInfo = await handleMediaUpload(messageData);
+        
+        // 4. PASSA O 'companyId' DINÂMICO PARA A FUNÇÃO DE UPLOAD (Exige a Correção 3)
+        const mediaInfo = await handleMediaUpload(messageData, companyId); 
+        
         if (mediaInfo) {
           messageToSave.mediaUrl = mediaInfo.mediaUrl;
           messageToSave.mediaType = mediaInfo.mediaType;
@@ -321,10 +444,10 @@ app.post('/api/evolution/webhook', async (req, res) => {
 
       const messagesRef = leadDocRef.collection('messages');
       await messagesRef.add(messageToSave);
-      console.log(`[EVOLUTION WEBHOOK] Mensagem de '${messageToSave.from}' salva para o lead ${leadId}`);
+      console.log(`[EVOLUTION WEBHOOK] Mensagem de '${messageToSave.from}' salva para o lead ${leadId} (Empresa: ${companyId})`);
 
     } catch (error) {
-      console.error('[EVOLUTION WEBHOOK] Erro ao processar mensagem (upsert):', error);
+      console.error(`[EVOLUTION WEBHOOK] Erro ao processar mensagem (upsert) para ${companyId}:`, error);
     }
   }
 });
