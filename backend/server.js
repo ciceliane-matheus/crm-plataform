@@ -100,18 +100,46 @@ app.get('/api/evolution/instance/qr', isAuthorized, async (req, res) => {
           `${EVOLUTION_API_URL}/instance/create`,
           {
             instanceName,
-            webhookUrl: `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/evolution/webhook`
+            webhookUrl: `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/evolution/webhook/${companyId}` // (Corrigido para ser dinâmico)
           },
           { headers } 
         );
 
         // ----------------------------------------------------
-        // 🔹 CORREÇÃO DE TIMING
-        // Adiciona um atraso para a Evolution API preparar a instância
+        // 🔹 CORREÇÃO DE TIMING (COM POLLING)
+        // Vamos verificar ativamente se a instância está pronta
         // ----------------------------------------------------
-        console.log(`[EVOLUTION QR] Instância ${instanceName} criada. Aguardando 3 segundos...`);
-        await new Promise(resolve => setTimeout(resolve, 3000)); // Atraso de 3 segundos
-        console.log(`[EVOLUTION QR] ...Pronto. Buscando QR Code.`);
+        console.log(`[EVOLUTION QR] Instância ${instanceName} criada. Aguardando provisionamento...`);
+        let isInstanceReady = false;
+        const maxAttempts = 5; // 5 tentativas (total 10 segundos)
+        const delay = 2000; // 2 segundos entre tentativas
+
+        for (let i = 0; i < maxAttempts; i++) {
+          try {
+            // Tenta buscar a instância recém-criada
+            await axios.get(`${EVOLUTION_API_URL}/instance/${instanceName}`, { headers });
+            
+            // Se o comando acima NÃO falhar (não der 404), a instância está pronta.
+            isInstanceReady = true;
+            console.log(`[EVOLUTION QR] ...Instância provisionada (Tentativa ${i + 1}).`);
+            break; // Sai do loop
+          } catch (checkErr) {
+            // Se ainda der 404, significa que não está pronta. Espera e tenta de novo.
+            if (checkErr.response?.status === 404) {
+              console.log(`[EVOLUTION QR] ...Aguardando (Tentativa ${i + 1})...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+              // Se for outro erro (500, 401), joga o erro para o catch principal
+              throw checkErr;
+            }
+          }
+        }
+
+        if (!isInstanceReady) {
+          // Se o loop terminar e a instância não estiver pronta
+          console.error("[EVOLUTION QR] Erro: Instância não ficou pronta após 10 segundos.");
+          throw new Error("Falha ao provisionar a instância na Evolution API a tempo.");
+        }
         // ----------------------------------------------------
 
       } else {
