@@ -96,17 +96,24 @@ app.get('/api/evolution/instance/qr', isAuthorized, async (req, res) => {
       if (err.response?.status === 404) {
         console.log(`[EVOLUTION QR] Instância ${instanceName} não encontrada. Criando...`);
         
-        // 🔹 AQUI É O PONTO CRÍTICO: Usar 'headers' no POST de criação
         await axios.post(
           `${EVOLUTION_API_URL}/instance/create`,
           {
             instanceName,
-            // Garante que o BACKEND_URL esteja no .env para o webhook
-            webhookUrl: `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/evolution/webhook/${companyId}`
+            webhookUrl: `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/evolution/webhook`
           },
-          { headers } // ⬅️ A AUTENTICAÇÃO QUE FALTAVA
+          { headers } 
         );
-        console.log(`[EVOLUTION QR] Instância ${instanceName} criada com sucesso.`);
+
+        // ----------------------------------------------------
+        // 🔹 CORREÇÃO DE TIMING
+        // Adiciona um atraso para a Evolution API preparar a instância
+        // ----------------------------------------------------
+        console.log(`[EVOLUTION QR] Instância ${instanceName} criada. Aguardando 3 segundos...`);
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Atraso de 3 segundos
+        console.log(`[EVOLUTION QR] ...Pronto. Buscando QR Code.`);
+        // ----------------------------------------------------
+
       } else {
         // Outro erro ao verificar (ex: 500 na Evolution, ou 401 se a key estiver errada)
         throw err; 
